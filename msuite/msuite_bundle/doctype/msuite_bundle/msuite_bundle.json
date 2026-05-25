@@ -1,0 +1,89 @@
+{
+    "actions": [],
+    "autoname": "field:bundle_code",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["bundle_details_section", "bundle_name", "bundle_code", "is_active", "activated_on", "description", "pricing_section", "pricing", "components_section", "components"],
+    "fields": [
+        {
+            "fieldname": "bundle_details_section",
+            "fieldtype": "Section Break",
+            "label": "Bundle Details"
+        },
+        {
+            "fieldname": "bundle_name",
+            "fieldtype": "Data",
+            "label": "Bundle Name",
+            "reqd": 1,
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "bundle_code",
+            "fieldtype": "Data",
+            "label": "Bundle Code",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "0",
+            "in_list_view": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "activated_on",
+            "fieldtype": "Datetime",
+            "label": "Activated On",
+            "read_only": 1,
+            "hidden": 1,
+            "description": "Set when bundle is first activated. Distinguishes draft from deactivated."
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description"
+        },
+        {
+            "fieldname": "pricing_section",
+            "fieldtype": "Section Break",
+            "label": "Pricing & Billing"
+        },
+        {
+            "fieldname": "pricing",
+            "fieldtype": "Table",
+            "label": "Pricing",
+            "options": "MSuite Bundle Pricing",
+            "description": "Add one row per billing interval. Item & Subscription Plan are auto-created on activation."
+        },
+        {
+            "fieldname": "components_section",
+            "fieldtype": "Section Break",
+            "label": "Components"
+        },
+        {
+            "fieldname": "components",
+            "fieldtype": "Table",
+            "label": "Bundle Components",
+            "options": "MSuite Bundle Component",
+            "reqd": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-04 12:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Bundle",
+    "name": "MSuite Bundle",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}

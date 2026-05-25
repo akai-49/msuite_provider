@@ -1,0 +1,56 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["billing_interval", "rate", "item", "subscription_plan"],
+    "fields": [
+        {
+            "fieldname": "billing_interval",
+            "fieldtype": "Select",
+            "label": "Billing Interval",
+            "options": "Monthly\nQuarterly\nAnnual",
+            "reqd": 1,
+            "in_list_view": 1,
+            "default": "Monthly"
+        },
+        {
+            "fieldname": "rate",
+            "fieldtype": "Currency",
+            "label": "Rate",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "item",
+            "fieldtype": "Link",
+            "label": "Item",
+            "options": "Item",
+            "read_only": 1,
+            "in_list_view": 1,
+            "description": "Auto-created on activation"
+        },
+        {
+            "fieldname": "subscription_plan",
+            "fieldtype": "Link",
+            "label": "Subscription Plan",
+            "options": "Subscription Plan",
+            "read_only": 1,
+            "in_list_view": 1,
+            "description": "Auto-created on activation"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-04-03 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Bundle",
+    "name": "MSuite Bundle Pricing",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [],
+    "sort_field": "idx",
+    "sort_order": "ASC"
+}

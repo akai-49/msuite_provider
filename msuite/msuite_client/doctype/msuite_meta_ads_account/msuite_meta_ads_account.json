@@ -1,0 +1,79 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-06 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "ads_section", "connected_account", "ad_account_id", "ad_account_name",
+        "cb_ads", "currency", "timezone", "account_status"
+    ],
+    "fields": [
+        {
+            "fieldname": "ads_section",
+            "fieldtype": "Section Break",
+            "label": "Meta Ad Account"
+        },
+        {
+            "fieldname": "connected_account",
+            "fieldtype": "Link",
+            "label": "Connected Account",
+            "options": "MSuite Connected Account",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "ad_account_id",
+            "fieldtype": "Data",
+            "label": "Ad Account ID",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Format: act_123456789"
+        },
+        {
+            "fieldname": "ad_account_name",
+            "fieldtype": "Data",
+            "label": "Account Name",
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "cb_ads",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "currency",
+            "fieldtype": "Data",
+            "label": "Currency",
+            "read_only": 1
+        },
+        {
+            "fieldname": "timezone",
+            "fieldtype": "Data",
+            "label": "Timezone",
+            "read_only": 1
+        },
+        {
+            "fieldname": "account_status",
+            "fieldtype": "Data",
+            "label": "Account Status",
+            "read_only": 1,
+            "description": "From Meta: ACTIVE, DISABLED, etc."
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-06 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite Meta Ads Account",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "title_field": "ad_account_name"
+}

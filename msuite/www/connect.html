@@ -1,0 +1,250 @@
+{% extends "templates/web.html" %}
+
+{% block title %}MSuite Connect{% endblock %}
+
+{% block head_include %}
+<style>
+    .connect-container {
+        max-width: 880px;
+        margin: 40px auto;
+        padding: 0 20px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .connect-header {
+        text-align: center;
+        margin-bottom: 32px;
+    }
+    .connect-header h1 {
+        font-size: 28px;
+        font-weight: 600;
+        color: #1a1a2e;
+        margin-bottom: 6px;
+    }
+    .connect-header p {
+        color: #6c757d;
+        font-size: 15px;
+    }
+
+    .client-selector {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 28px;
+    }
+    .client-selector label {
+        font-weight: 600;
+        font-size: 13px;
+        color: #495057;
+        display: block;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+    .client-selector select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid #ced4da;
+        border-radius: 8px;
+        font-size: 15px;
+        background: white;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 3px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+    .status-active    { background: #d4edda; color: #155724; }
+    .status-draft     { background: #e2e3e5; color: #383d41; }
+    .status-suspended { background: #fff3cd; color: #856404; }
+
+    .platform-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 16px;
+        margin-bottom: 32px;
+    }
+
+    .platform-card {
+        background: white;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        padding: 22px;
+        text-align: center;
+        transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .platform-card:hover {
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+        transform: translateY(-2px);
+    }
+    .platform-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+    }
+    .platform-card h3 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0 0 6px;
+        color: #1a1a2e;
+    }
+    .platform-card p {
+        font-size: 12px;
+        color: #6c757d;
+        line-height: 1.45;
+        margin: 0 0 14px;
+        min-height: 36px;
+    }
+    .platform-card .btn {
+        display: inline-block;
+        padding: 8px 20px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: background 0.15s;
+        color: white;
+    }
+    .platform-card .btn:disabled {
+        background: #e9ecef !important;
+        color: #868e96 !important;
+        cursor: not-allowed;
+    }
+    .btn-whatsapp     { background: #25D366; }
+    .btn-whatsapp:hover:not(:disabled)    { background: #1da851; }
+    .btn-meta_social  { background: #1877F2; }
+    .btn-meta_social:hover:not(:disabled) { background: #0d63d1; }
+    .btn-meta_ads     { background: #0866FF; }
+    .btn-meta_ads:hover:not(:disabled)    { background: #054dc7; }
+    .btn-linkedin     { background: #0a66c2; }
+    .btn-linkedin:hover:not(:disabled)    { background: #084c92; }
+    .btn-twitter      { background: #000000; }
+    .btn-twitter:hover:not(:disabled)     { background: #333333; }
+    .btn-tiktok       { background: #000000; }
+    .btn-tiktok:hover:not(:disabled)      { background: #333333; }
+    .btn-youtube      { background: #FF0000; }
+    .btn-youtube:hover:not(:disabled)     { background: #cc0000; }
+
+    .platform-reason {
+        margin-top: 10px;
+        font-size: 11px;
+        color: #adb5bd;
+        font-style: italic;
+    }
+
+    .connected-section {
+        margin-top: 16px;
+    }
+    .connected-section h2 {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 14px;
+        color: #1a1a2e;
+    }
+    .account-list {
+        background: white;
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .account-row {
+        display: flex;
+        align-items: center;
+        padding: 12px 18px;
+        border-bottom: 1px solid #f1f3f5;
+    }
+    .account-row:last-child { border-bottom: none; }
+    .account-platform {
+        width: 110px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+    .account-name {
+        flex: 1;
+        font-size: 13px;
+        font-weight: 500;
+        color: #1a1a2e;
+    }
+    .account-business {
+        font-size: 11px;
+        color: #868e96;
+        margin-right: 10px;
+    }
+    .account-status {
+        font-size: 11px;
+        padding: 2px 10px;
+        border-radius: 10px;
+    }
+    .account-status.Active  { background: #d4edda; color: #155724; }
+    .account-status.Expired { background: #fff3cd; color: #856404; }
+    .account-status.Revoked { background: #f8d7da; color: #721c24; }
+    .empty-state {
+        text-align: center;
+        padding: 36px;
+        color: #868e96;
+        font-size: 13px;
+    }
+
+    .alert {
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin-bottom: 14px;
+        font-size: 13px;
+    }
+    .alert-info    { background: #cff4fc; color: #055160; }
+    .alert-success { background: #d1e7dd; color: #0f5132; }
+    .alert-error   { background: #f8d7da; color: #842029; }
+    .alert-warning { background: #fff3cd; color: #664d03; }
+
+    #loading {
+        text-align: center;
+        padding: 60px;
+        color: #868e96;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div class="connect-container">
+    <div class="connect-header">
+        <h1>MSuite Connect</h1>
+        <p>Connect your WhatsApp, social, and ad accounts to a client workspace.</p>
+    </div>
+
+    <div id="loading">Loading…</div>
+
+    <div id="app" style="display: none;">
+        <div class="client-selector">
+            <label>Select Client</label>
+            <select id="client-select">
+                <option value="">— Select a client —</option>
+            </select>
+            <div id="client-info" style="margin-top: 12px; display: none;">
+                <span id="client-status" class="status-badge"></span>
+                <span id="client-customer" style="margin-left: 12px; color: #6c757d; font-size: 13px;"></span>
+            </div>
+        </div>
+
+        <div id="alerts"></div>
+
+        <div class="platform-grid" id="platform-grid" style="display: none;"></div>
+
+        <div class="connected-section" id="connected-section" style="display: none;">
+            <h2>Connected Accounts</h2>
+            <div class="account-list" id="account-list"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block base_scripts %}
+{{ super() }}
+<script src="/assets/msuite/js/connect.js"></script>
+{% endblock %}

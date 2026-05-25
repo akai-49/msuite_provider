@@ -1,0 +1,141 @@
+{
+    "actions": [],
+    "autoname": "field:plan_code",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["plan_identity_section", "plan_name", "plan_code", "cb_identity", "product", "tier", "is_active", "activated_on", "sort_order", "description", "pricing_section", "pricing", "features_section", "features", "grants_section", "grants", "legacy_section", "item"],
+    "fields": [
+        {
+            "fieldname": "plan_identity_section",
+            "fieldtype": "Section Break",
+            "label": "Plan Identity"
+        },
+        {
+            "fieldname": "plan_name",
+            "fieldtype": "Data",
+            "label": "Plan Name",
+            "reqd": 1,
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "plan_code",
+            "fieldtype": "Data",
+            "label": "Plan Code",
+            "reqd": 1,
+            "unique": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "cb_identity",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "product",
+            "fieldtype": "Link",
+            "label": "Product",
+            "options": "MSuite Product",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "tier",
+            "fieldtype": "Select",
+            "label": "Tier",
+            "options": "Trial\nBasic\nPro\nBusiness\nEnterprise",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "0",
+            "in_list_view": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "activated_on",
+            "fieldtype": "Datetime",
+            "label": "Activated On",
+            "read_only": 1,
+            "hidden": 1,
+            "description": "Set when plan is first activated. Distinguishes draft from deactivated."
+        },
+        {
+            "fieldname": "sort_order",
+            "fieldtype": "Int",
+            "label": "Sort Order",
+            "default": "0"
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description"
+        },
+        {
+            "fieldname": "pricing_section",
+            "fieldtype": "Section Break",
+            "label": "Pricing & Billing"
+        },
+        {
+            "fieldname": "pricing",
+            "fieldtype": "Table",
+            "label": "Pricing",
+            "options": "MSuite Plan Pricing",
+            "description": "Add one row per billing interval. Item & Subscription Plan are auto-created on activation."
+        },
+        {
+            "fieldname": "features_section",
+            "fieldtype": "Section Break",
+            "label": "Features"
+        },
+        {
+            "fieldname": "features",
+            "fieldtype": "Table",
+            "label": "Plan Features",
+            "options": "MSuite Plan Feature"
+        },
+        {
+            "fieldname": "grants_section",
+            "fieldtype": "Section Break",
+            "label": "Grant Rules"
+        },
+        {
+            "fieldname": "grants",
+            "fieldtype": "Table",
+            "label": "Complimentary Grant Rules",
+            "options": "MSuite Plan Grant"
+        },
+        {
+            "fieldname": "legacy_section",
+            "fieldtype": "Section Break",
+            "label": "Legacy",
+            "collapsible": 1,
+            "hidden": 1
+        },
+        {
+            "fieldname": "item",
+            "fieldtype": "Link",
+            "label": "Item (Legacy)",
+            "options": "Item",
+            "hidden": 1,
+            "description": "Legacy field. Use Pricing table instead."
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-04 12:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Plan",
+    "name": "MSuite Plan",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}

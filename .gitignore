@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+*.egg
+.DS_Store
+node_modules/
+
+# Local dev / backup artefacts — never push these.
+Archive/
+Archive.zip
+_bkup-*/
+*.bkup
+*.bak
+.idea/
+.vscode/

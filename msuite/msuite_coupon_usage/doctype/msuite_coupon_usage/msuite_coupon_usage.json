@@ -1,0 +1,53 @@
+{
+    "actions": [],
+    "autoname": "format:CUSG-{#####}",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["coupon_code", "customer", "used_on", "sales_invoice"],
+    "fields": [
+        {
+            "fieldname": "coupon_code",
+            "fieldtype": "Link",
+            "label": "Coupon Code",
+            "options": "Coupon Code",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "customer",
+            "fieldtype": "Link",
+            "label": "Customer",
+            "options": "Customer",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "used_on",
+            "fieldtype": "Date",
+            "label": "Used On",
+            "reqd": 1
+        },
+        {
+            "fieldname": "sales_invoice",
+            "fieldtype": "Link",
+            "label": "Sales Invoice",
+            "options": "Sales Invoice",
+            "reqd": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-03 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Coupon Usage",
+    "name": "MSuite Coupon Usage",
+    "naming_rule": "Expression (old style)",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}

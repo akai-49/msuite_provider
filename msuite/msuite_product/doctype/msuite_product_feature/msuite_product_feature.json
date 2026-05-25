@@ -1,0 +1,57 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["feature_key", "feature_label", "feature_type", "description", "display_order"],
+    "fields": [
+        {
+            "fieldname": "feature_key",
+            "fieldtype": "Data",
+            "label": "Feature Key",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "feature_label",
+            "fieldtype": "Data",
+            "label": "Feature Label",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "feature_type",
+            "fieldtype": "Select",
+            "label": "Feature Type",
+            "options": "Boolean\nNumeric\nEnum",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description"
+        },
+        {
+            "fieldname": "display_order",
+            "fieldtype": "Int",
+            "label": "Display Order",
+            "default": "0"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-04-04 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Product",
+    "name": "MSuite Product Feature",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [],
+    "show_title_field_in_link": 1,
+    "title_field": "feature_label",
+    "sort_field": "display_order",
+    "sort_order": "ASC"
+}

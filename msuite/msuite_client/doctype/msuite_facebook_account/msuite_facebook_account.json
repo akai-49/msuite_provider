@@ -1,0 +1,90 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-06 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "page_section", "connected_account", "page_id", "page_name",
+        "cb_page", "page_category", "fan_count",
+        "instagram_section", "linked_instagram_id", "linked_instagram_username"
+    ],
+    "fields": [
+        {
+            "fieldname": "page_section",
+            "fieldtype": "Section Break",
+            "label": "Facebook Page"
+        },
+        {
+            "fieldname": "connected_account",
+            "fieldtype": "Link",
+            "label": "Connected Account",
+            "options": "MSuite Connected Account",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "page_id",
+            "fieldtype": "Data",
+            "label": "Page ID",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "page_name",
+            "fieldtype": "Data",
+            "label": "Page Name",
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "cb_page",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "page_category",
+            "fieldtype": "Data",
+            "label": "Category",
+            "read_only": 1
+        },
+        {
+            "fieldname": "fan_count",
+            "fieldtype": "Int",
+            "label": "Fan Count",
+            "read_only": 1
+        },
+        {
+            "fieldname": "instagram_section",
+            "fieldtype": "Section Break",
+            "label": "Linked Instagram",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "linked_instagram_id",
+            "fieldtype": "Data",
+            "label": "Instagram User ID",
+            "read_only": 1
+        },
+        {
+            "fieldname": "linked_instagram_username",
+            "fieldtype": "Data",
+            "label": "Instagram Username",
+            "read_only": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-06 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite Facebook Account",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "title_field": "page_name"
+}

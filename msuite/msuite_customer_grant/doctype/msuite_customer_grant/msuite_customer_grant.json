@@ -1,0 +1,101 @@
+{
+    "actions": [],
+    "autoname": "format:GRANT-{#####}",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["grant_identity_section", "customer", "granted_plan", "source_subscription", "grant_type", "trigger_plan", "lifecycle_section", "status", "granted_on", "expires_on", "revoked_on", "revocation_reason"],
+    "fields": [
+        {
+            "fieldname": "grant_identity_section",
+            "fieldtype": "Section Break",
+            "label": "Grant Identity"
+        },
+        {
+            "fieldname": "customer",
+            "fieldtype": "Link",
+            "label": "Customer",
+            "options": "Customer",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "granted_plan",
+            "fieldtype": "Link",
+            "label": "Granted Plan",
+            "options": "MSuite Plan",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "source_subscription",
+            "fieldtype": "Link",
+            "label": "Source Subscription",
+            "options": "Subscription",
+            "reqd": 1
+        },
+        {
+            "fieldname": "grant_type",
+            "fieldtype": "Select",
+            "label": "Grant Type",
+            "options": "Paid\nComplimentary\nBundle\nTrial",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "trigger_plan",
+            "fieldtype": "Link",
+            "label": "Trigger Plan",
+            "options": "MSuite Plan"
+        },
+        {
+            "fieldname": "lifecycle_section",
+            "fieldtype": "Section Break",
+            "label": "Lifecycle"
+        },
+        {
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "label": "Status",
+            "options": "Active\nRevoked\nExpired",
+            "reqd": 1,
+            "default": "Active",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "granted_on",
+            "fieldtype": "Date",
+            "label": "Granted On",
+            "reqd": 1
+        },
+        {
+            "fieldname": "expires_on",
+            "fieldtype": "Date",
+            "label": "Expires On"
+        },
+        {
+            "fieldname": "revoked_on",
+            "fieldtype": "Date",
+            "label": "Revoked On"
+        },
+        {
+            "fieldname": "revocation_reason",
+            "fieldtype": "Small Text",
+            "label": "Revocation Reason"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-03 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Customer Grant",
+    "name": "MSuite Customer Grant",
+    "naming_rule": "Expression (old style)",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}

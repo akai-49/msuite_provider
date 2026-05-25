@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: msuite
+Version: 1.0.0
+Summary: SaaS subscription and entitlement management
+Author: MSuite
+Author-email: dev@msuite.com
+Requires-Dist: frappe
+Requires-Dist: erpnext
+Dynamic: author
+Dynamic: author-email
+Dynamic: requires-dist
+Dynamic: summary

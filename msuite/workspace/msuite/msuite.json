@@ -1,0 +1,339 @@
+{
+ "charts": [],
+ "content": "[{\"id\":\"hdr_clients\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Clients</b></span>\",\"col\":12}},{\"id\":\"sc_client\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Client\",\"col\":3}},{\"id\":\"sc_app\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite App\",\"col\":3}},{\"id\":\"sc_connected\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Connected Account\",\"col\":3}},{\"id\":\"sc_auth\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Auth Account\",\"col\":3}},{\"id\":\"hdr_products\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Products & Plans</b></span>\",\"col\":12}},{\"id\":\"sc_product\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Product\",\"col\":3}},{\"id\":\"sc_plan\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Plan\",\"col\":3}},{\"id\":\"sc_bundle\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Bundle\",\"col\":3}},{\"id\":\"hdr_billing\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Billing</b></span>\",\"col\":12}},{\"id\":\"sc_sub\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Subscription\",\"col\":3}},{\"id\":\"sc_grant\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"MSuite Customer Grant\",\"col\":3}},{\"id\":\"sc_invoice\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Invoice\",\"col\":3}},{\"id\":\"sc_coupon\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Coupon Code\",\"col\":3}}]",
+ "creation": "2026-04-03 00:00:00",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "tool",
+ "idx": 0,
+ "is_default": 0,
+ "is_standard": 1,
+ "label": "MSuite",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Client",
+   "link_count": 0,
+   "link_to": "MSuite Client",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite App",
+   "link_count": 0,
+   "link_to": "MSuite App",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Auth Account",
+   "link_count": 0,
+   "link_to": "MSuite Auth Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Connected Account",
+   "link_count": 0,
+   "link_to": "MSuite Connected Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite WhatsApp Account",
+   "link_count": 0,
+   "link_to": "MSuite WhatsApp Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Facebook Account",
+   "link_count": 0,
+   "link_to": "MSuite Facebook Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Instagram Account",
+   "link_count": 0,
+   "link_to": "MSuite Instagram Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Meta Ads Account",
+   "link_count": 0,
+   "link_to": "MSuite Meta Ads Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Product",
+   "link_count": 0,
+   "link_to": "MSuite Product",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Plan",
+   "link_count": 0,
+   "link_to": "MSuite Plan",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Bundle",
+   "link_count": 0,
+   "link_to": "MSuite Bundle",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Customer Grant",
+   "link_count": 0,
+   "link_to": "MSuite Customer Grant",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Coupon Usage",
+   "link_count": 0,
+   "link_to": "MSuite Coupon Usage",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite Customer Group Membership",
+   "link_count": 0,
+   "link_to": "MSuite Customer Group Membership",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscription",
+   "link_count": 0,
+   "link_to": "Subscription",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sales Invoice",
+   "link_count": 0,
+   "link_to": "Sales Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Coupon Code",
+   "link_count": 0,
+   "link_to": "Coupon Code",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Pricing Rule",
+   "link_count": 0,
+   "link_to": "Pricing Rule",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customer",
+   "link_count": 0,
+   "link_to": "Customer",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Plan Revenue Summary",
+   "link_count": 0,
+   "link_to": "Plan Revenue Summary",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Trial Conversion Rate",
+   "link_count": 0,
+   "link_to": "Trial Conversion Rate",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Active Subscriptions by Plan",
+   "link_count": 0,
+   "link_to": "Active Subscriptions by Plan",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Coupon Usage Summary",
+   "link_count": 0,
+   "link_to": "Coupon Usage Summary",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-04-07 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "MSuite Product",
+ "name": "MSuite",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 1,
+ "shortcuts": [
+  {
+   "color": "Blue",
+   "doc_view": "List",
+   "label": "MSuite Client",
+   "link_to": "MSuite Client",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "MSuite App",
+   "link_to": "MSuite App",
+   "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "doc_view": "List",
+   "label": "MSuite Connected Account",
+   "link_to": "MSuite Connected Account",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "MSuite Auth Account",
+   "link_to": "MSuite Auth Account",
+   "type": "DocType"
+  },
+  {
+   "color": "Blue",
+   "doc_view": "List",
+   "label": "MSuite Product",
+   "link_to": "MSuite Product",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "List",
+   "label": "MSuite Plan",
+   "link_to": "MSuite Plan",
+   "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "doc_view": "List",
+   "label": "MSuite Bundle",
+   "link_to": "MSuite Bundle",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "",
+   "label": "Subscription",
+   "link_to": "Subscription",
+   "type": "DocType"
+  },
+  {
+   "color": "Yellow",
+   "doc_view": "List",
+   "label": "MSuite Customer Grant",
+   "link_to": "MSuite Customer Grant",
+   "type": "DocType"
+  },
+  {
+   "color": "Blue",
+   "doc_view": "",
+   "label": "Coupon Code",
+   "link_to": "Coupon Code",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Sales Invoice",
+   "link_to": "Sales Invoice",
+   "type": "DocType"
+  }
+ ],
+ "title": "MSuite"
+}

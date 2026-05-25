@@ -1,0 +1,202 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-06 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "account_section", "client", "auth_account", "platform", "display_name", "account_id",
+        "cb_account", "status", "needs_reauth", "connected_via", "msuite_app",
+        "token_section", "access_token", "refresh_token", "token_type", "token_expiry",
+        "timestamps_section", "connected_at", "last_refreshed",
+        "last_refresh_attempt_at", "last_refresh_error"
+    ],
+    "fields": [
+        {
+            "fieldname": "account_section",
+            "fieldtype": "Section Break",
+            "label": "Account"
+        },
+        {
+            "fieldname": "client",
+            "fieldtype": "Link",
+            "label": "Client",
+            "options": "MSuite Client",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "auth_account",
+            "fieldtype": "Link",
+            "label": "Auth Account",
+            "options": "MSuite Auth Account",
+            "description": "Parent business/auth entity this account belongs to"
+        },
+        {
+            "fieldname": "platform",
+            "fieldtype": "Select",
+            "label": "Platform",
+            "options": "WhatsApp\nFacebook\nInstagram\nMeta Ads\nYouTube\nGoogle Ads\nTikTok\nLinkedIn\nTwitter",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "The product/service (not parent company)"
+        },
+        {
+            "fieldname": "display_name",
+            "fieldtype": "Data",
+            "label": "Display Name",
+            "read_only": 1,
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "account_id",
+            "fieldtype": "Data",
+            "label": "Account ID",
+            "reqd": 1,
+            "description": "waba_id, page_id, ig_user_id, ad_account_id, etc."
+        },
+        {
+            "fieldname": "cb_account",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "label": "Status",
+            "options": "Active\nExpired\nRevoked",
+            "default": "Active",
+            "in_list_view": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "needs_reauth",
+            "fieldtype": "Check",
+            "label": "Needs Re-auth",
+            "default": 0,
+            "read_only": 1,
+            "description": "Set when a refresh attempt failed unrecoverably. Customer site shows a Reconnect prompt."
+        },
+        {
+            "fieldname": "connected_via",
+            "fieldtype": "Select",
+            "label": "Connected Via",
+            "options": "Provider\nClient",
+            "default": "Provider",
+            "read_only": 1
+        },
+        {
+            "fieldname": "msuite_app",
+            "fieldtype": "Link",
+            "label": "MSuite App",
+            "options": "MSuite App",
+            "read_only": 1
+        },
+        {
+            "fieldname": "token_section",
+            "fieldtype": "Section Break",
+            "label": "Token",
+            "hidden": 1
+        },
+        {
+            "fieldname": "access_token",
+            "fieldtype": "Password",
+            "label": "Access Token",
+            "description": "Encrypted. Short-lived for OAuth-refresh platforms (Google/Twitter/TikTok), long-lived for Meta."
+        },
+        {
+            "fieldname": "refresh_token",
+            "fieldtype": "Password",
+            "label": "Refresh Token",
+            "description": "Encrypted. Used by Google/Twitter/TikTok/LinkedIn-new to mint a fresh access_token. Null for Meta long-lived (extended in place via fb_exchange_token)."
+        },
+        {
+            "fieldname": "token_type",
+            "fieldtype": "Select",
+            "label": "Token Type",
+            "options": "\nSystem User\nPage Token\nUser Token\nOAuth Token",
+            "read_only": 1
+        },
+        {
+            "fieldname": "token_expiry",
+            "fieldtype": "Datetime",
+            "label": "Token Expiry",
+            "read_only": 1,
+            "description": "Null = never expires"
+        },
+        {
+            "fieldname": "timestamps_section",
+            "fieldtype": "Section Break",
+            "label": "Timestamps",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "connected_at",
+            "fieldtype": "Datetime",
+            "label": "Connected At",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_refreshed",
+            "fieldtype": "Datetime",
+            "label": "Last Refreshed",
+            "read_only": 1,
+            "description": "Last SUCCESSFUL refresh. Used by the daily cron to skip recently-refreshed accounts."
+        },
+        {
+            "fieldname": "last_refresh_attempt_at",
+            "fieldtype": "Datetime",
+            "label": "Last Refresh Attempt",
+            "read_only": 1,
+            "description": "Set on EVERY attempt (success or failure) so we don't hammer the provider after a known-broken token."
+        },
+        {
+            "fieldname": "last_refresh_error",
+            "fieldtype": "Small Text",
+            "label": "Last Refresh Error",
+            "read_only": 1,
+            "description": "Diagnostic for the most recent failed refresh."
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [
+        {
+            "group": "Consent",
+            "link_doctype": "MSuite Signup Consent",
+            "link_fieldname": "connected_account"
+        },
+        {
+            "group": "Platform Details",
+            "link_doctype": "MSuite WhatsApp Account",
+            "link_fieldname": "connected_account"
+        },
+        {
+            "group": "Platform Details",
+            "link_doctype": "MSuite Facebook Account",
+            "link_fieldname": "connected_account"
+        },
+        {
+            "group": "Platform Details",
+            "link_doctype": "MSuite Instagram Account",
+            "link_fieldname": "connected_account"
+        },
+        {
+            "group": "Platform Details",
+            "link_doctype": "MSuite Meta Ads Account",
+            "link_fieldname": "connected_account"
+        }
+    ],
+    "modified": "2026-04-06 14:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite Connected Account",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "connected_at",
+    "sort_order": "DESC",
+    "title_field": "display_name"
+}

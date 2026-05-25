@@ -1,0 +1,82 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-06 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "ig_section", "connected_account", "instagram_user_id", "username", "name_field",
+        "cb_ig", "followers_count", "linked_page_id", "linked_page_name"
+    ],
+    "fields": [
+        {
+            "fieldname": "ig_section",
+            "fieldtype": "Section Break",
+            "label": "Instagram Account"
+        },
+        {
+            "fieldname": "connected_account",
+            "fieldtype": "Link",
+            "label": "Connected Account",
+            "options": "MSuite Connected Account",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "fieldname": "instagram_user_id",
+            "fieldtype": "Data",
+            "label": "Instagram User ID",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "username",
+            "fieldtype": "Data",
+            "label": "Username",
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "name_field",
+            "fieldtype": "Data",
+            "label": "Display Name"
+        },
+        {
+            "fieldname": "cb_ig",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "followers_count",
+            "fieldtype": "Int",
+            "label": "Followers",
+            "read_only": 1
+        },
+        {
+            "fieldname": "linked_page_id",
+            "fieldtype": "Data",
+            "label": "Linked Facebook Page ID",
+            "read_only": 1
+        },
+        {
+            "fieldname": "linked_page_name",
+            "fieldtype": "Data",
+            "label": "Linked Facebook Page",
+            "read_only": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-06 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite Instagram Account",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "title_field": "username"
+}

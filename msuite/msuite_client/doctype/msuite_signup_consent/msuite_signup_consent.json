@@ -1,0 +1,262 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-04-07 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "consent_section",
+  "client", "connected_account", "platform",
+  "cb_consent",
+  "consent_status", "consented_at", "revoked_at",
+
+  "event_section",
+  "event_type", "waba_id", "phone_number_id",
+  "cb_event",
+  "business_id", "cancelled_step", "error_message",
+
+  "permissions_section",
+  "meta_user_id", "granted_scopes", "data_access_expires",
+  "cb_permissions",
+  "token_valid", "granular_scopes",
+
+  "environment_section",
+  "ip_address", "user_agent_string",
+  "cb_env",
+  "browser", "platform_os", "accept_language",
+
+  "audit_section",
+  "raw_debug_token", "raw_auth_response"
+ ],
+ "fields": [
+  {
+   "fieldname": "consent_section",
+   "fieldtype": "Section Break",
+   "label": "Consent"
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Link",
+   "label": "Client",
+   "options": "MSuite Client",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "connected_account",
+   "fieldtype": "Link",
+   "label": "Connected Account",
+   "options": "MSuite Connected Account",
+   "description": "Set after signup completes. Null for CANCEL/ERROR events."
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Select",
+   "label": "Platform",
+   "options": "WhatsApp\nFacebook\nInstagram\nMeta Ads",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "cb_consent",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "consent_status",
+   "fieldtype": "Select",
+   "label": "Consent Status",
+   "options": "Granted\nRevoked\nCancelled\nFailed",
+   "default": "Granted",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "consented_at",
+   "fieldtype": "Datetime",
+   "label": "Consented At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "revoked_at",
+   "fieldtype": "Datetime",
+   "label": "Revoked At",
+   "read_only": 1,
+   "depends_on": "eval:doc.consent_status == 'Revoked'"
+  },
+
+  {
+   "fieldname": "event_section",
+   "fieldtype": "Section Break",
+   "label": "Signup Event"
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Select",
+   "label": "Event Type",
+   "options": "FINISH\nFINISH_ONLY_WABA\nCOEXISTENCE\nCANCEL\nERROR",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "waba_id",
+   "fieldtype": "Data",
+   "label": "WABA ID",
+   "description": "WhatsApp Business Account ID from session info"
+  },
+  {
+   "fieldname": "phone_number_id",
+   "fieldtype": "Data",
+   "label": "Phone Number ID",
+   "description": "From session info (null for FINISH_ONLY_WABA and CANCEL)"
+  },
+  {
+   "fieldname": "cb_event",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "business_id",
+   "fieldtype": "Data",
+   "label": "Business ID",
+   "description": "Meta Business ID (from coexistence event or WABA details)"
+  },
+  {
+   "fieldname": "cancelled_step",
+   "fieldtype": "Data",
+   "label": "Cancelled Step",
+   "read_only": 1,
+   "depends_on": "eval:doc.event_type == 'CANCEL'",
+   "description": "Which step the user was on when they cancelled"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message",
+   "read_only": 1,
+   "depends_on": "eval:doc.event_type == 'ERROR'"
+  },
+
+  {
+   "fieldname": "permissions_section",
+   "fieldtype": "Section Break",
+   "label": "Permissions (from debug_token)",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "meta_user_id",
+   "fieldtype": "Data",
+   "label": "Meta User ID",
+   "read_only": 1,
+   "description": "The Meta user who authorized the signup"
+  },
+  {
+   "fieldname": "granted_scopes",
+   "fieldtype": "Small Text",
+   "label": "Granted Scopes",
+   "read_only": 1,
+   "description": "JSON array of permission scopes granted"
+  },
+  {
+   "fieldname": "data_access_expires",
+   "fieldtype": "Datetime",
+   "label": "Data Access Expires",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_permissions",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "token_valid",
+   "fieldtype": "Check",
+   "label": "Token Valid",
+   "read_only": 1,
+   "default": "1"
+  },
+  {
+   "fieldname": "granular_scopes",
+   "fieldtype": "Code",
+   "label": "Granular Scopes",
+   "options": "JSON",
+   "read_only": 1,
+   "description": "Per-WABA permission breakdown from debug_token"
+  },
+
+  {
+   "fieldname": "environment_section",
+   "fieldtype": "Section Break",
+   "label": "Client Environment",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "ip_address",
+   "fieldtype": "Data",
+   "label": "IP Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "user_agent_string",
+   "fieldtype": "Small Text",
+   "label": "User Agent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_env",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "browser",
+   "fieldtype": "Data",
+   "label": "Browser",
+   "read_only": 1
+  },
+  {
+   "fieldname": "platform_os",
+   "fieldtype": "Data",
+   "label": "Platform / OS",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accept_language",
+   "fieldtype": "Data",
+   "label": "Accept-Language",
+   "read_only": 1
+  },
+
+  {
+   "fieldname": "audit_section",
+   "fieldtype": "Section Break",
+   "label": "Audit Trail (raw responses)",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "raw_debug_token",
+   "fieldtype": "Code",
+   "label": "Raw debug_token Response",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_auth_response",
+   "fieldtype": "Code",
+   "label": "Raw Auth Response",
+   "options": "JSON",
+   "read_only": 1,
+   "description": "Sanitized — tokens are NOT stored here"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-04-07 12:00:00",
+ "modified_by": "Administrator",
+ "module": "MSuite Client",
+ "name": "MSuite Signup Consent",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1},
+  {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "consented_at",
+ "sort_order": "DESC",
+ "title_field": "client"
+}

@@ -1,0 +1,101 @@
+{
+    "actions": [],
+    "autoname": "hash",
+    "creation": "2026-04-06 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "details_section", "client", "platform", "account_id", "account_name",
+        "cb_details", "verification_status", "profile_picture_url",
+        "timestamps_section", "connected_at"
+    ],
+    "fields": [
+        {
+            "fieldname": "details_section",
+            "fieldtype": "Section Break",
+            "label": "Auth Account"
+        },
+        {
+            "fieldname": "client",
+            "fieldtype": "Link",
+            "label": "Client",
+            "options": "MSuite Client",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "platform",
+            "fieldtype": "Select",
+            "label": "Platform",
+            "options": "Meta\nGoogle\nTikTok\nLinkedIn\nTwitter\nMicrosoft",
+            "reqd": 1,
+            "in_list_view": 1,
+            "description": "Parent company / auth provider"
+        },
+        {
+            "fieldname": "account_id",
+            "fieldtype": "Data",
+            "label": "Account ID",
+            "reqd": 1,
+            "description": "Meta Business ID, Google Account ID, etc."
+        },
+        {
+            "fieldname": "account_name",
+            "fieldtype": "Data",
+            "label": "Account Name",
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "cb_details",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "verification_status",
+            "fieldtype": "Data",
+            "label": "Verification Status",
+            "read_only": 1,
+            "description": "VERIFIED, NOT_VERIFIED, BLUE_VERIFIED, etc."
+        },
+        {
+            "fieldname": "profile_picture_url",
+            "fieldtype": "Small Text",
+            "label": "Profile Picture URL",
+            "read_only": 1,
+            "hidden": 1
+        },
+        {
+            "fieldname": "timestamps_section",
+            "fieldtype": "Section Break",
+            "label": "Timestamps",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "connected_at",
+            "fieldtype": "Datetime",
+            "label": "Connected At",
+            "read_only": 1
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [
+        {
+            "group": "Connected Accounts",
+            "link_doctype": "MSuite Connected Account",
+            "link_fieldname": "auth_account"
+        }
+    ],
+    "modified": "2026-04-06 12:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite Auth Account",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "title_field": "account_name"
+}

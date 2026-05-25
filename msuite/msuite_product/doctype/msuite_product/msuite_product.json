@@ -1,0 +1,68 @@
+{
+    "actions": [],
+    "autoname": "field:product_code",
+    "creation": "2026-04-03 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": ["product_details_section", "product_name", "product_code", "description", "is_active", "features_section", "features"],
+    "fields": [
+        {
+            "fieldname": "product_details_section",
+            "fieldtype": "Section Break",
+            "label": "Product Details"
+        },
+        {
+            "fieldname": "product_name",
+            "fieldtype": "Data",
+            "label": "Product Name",
+            "reqd": 1,
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "product_code",
+            "fieldtype": "Data",
+            "label": "Product Code",
+            "reqd": 1,
+            "unique": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "description",
+            "fieldtype": "Small Text",
+            "label": "Description"
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "features_section",
+            "fieldtype": "Section Break",
+            "label": "Features"
+        },
+        {
+            "fieldname": "features",
+            "fieldtype": "Table",
+            "label": "Product Features",
+            "options": "MSuite Product Feature"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-03 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Product",
+    "name": "MSuite Product",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}

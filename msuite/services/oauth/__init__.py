@@ -1,0 +1,263 @@
+"""
+OAuth service — public API.
+
+Dispatches to platform-specific handlers via registries. Each module
+implements `build_auth_url`, `exchange_token`, and `discover_accounts`
+for one product's flow:
+  - meta_whatsapp.py : WhatsApp Embedded Signup (special — not standard OAuth)
+  - meta_social.py   : Facebook Pages + Instagram Business (organic)
+  - meta_ads.py      : Meta Ad Accounts (paid)
+  - (future) google.py, tiktok.py, linkedin.py, twitter.py
+
+Shared Meta plumbing (token exchange, business discovery) lives in
+meta_base.py so meta_social and meta_ads only own what differs between
+them (scopes + discovery).
+
+Usage:
+    from msuite.services.oauth import build_auth_url, process_oauth_callback
+    from msuite.services.oauth import exchange_whatsapp_code
+"""
+import json
+import secrets
+
+import frappe
+from frappe.utils import now, add_days
+
+from msuite.constants import (
+    ConnectedAccountStatus,
+    OAUTH_STATE_TTL_SECONDS,
+    OAUTH_STATE_CACHE_PREFIX,
+    TOKEN_REFRESH_BUFFER_DAYS,
+    MSUITE_LOGGER_NAME,
+)
+from msuite.exceptions import OAuthError
+
+# Platform handler imports
+from . import google
+from . import linkedin
+from . import meta_ads
+from . import meta_all
+from . import meta_social
+from . import meta_whatsapp
+from . import twitter
+
+logger = frappe.logger(MSUITE_LOGGER_NAME)
+
+
+# ── Platform handler registries ──────────────────────────────────────────
+# Each platform registers three functions:
+#   auth_url_builder(client_name, state) → url
+#   token_exchanger(code, state_data) → token_data
+#   account_discoverer(client_name, token_data) → connected_list
+
+_AUTH_URL_BUILDERS = {
+    "meta_social": meta_social.build_auth_url,
+    "meta_ads":    meta_ads.build_auth_url,
+    "meta_all":    meta_all.build_auth_url,
+    "linkedin":    linkedin.build_auth_url,
+    "twitter":     twitter.build_auth_url,
+    "google":      google.build_auth_url,
+}
+
+_TOKEN_EXCHANGERS = {
+    "meta_social": meta_social.exchange_token,
+    "meta_ads":    meta_ads.exchange_token,
+    "meta_all":    meta_all.exchange_token,
+    "linkedin":    linkedin.exchange_token,
+    "twitter":     twitter.exchange_token,
+    "google":      google.exchange_token,
+}
+
+_ACCOUNT_DISCOVERERS = {
+    "meta_social": meta_social.discover_accounts,
+    "meta_ads":    meta_ads.discover_accounts,
+    "meta_all":    meta_all.discover_accounts,
+    "linkedin":    linkedin.discover_accounts,
+    "twitter":     twitter.discover_accounts,
+    "google":      google.discover_accounts,
+}
+
+_TOKEN_REFRESHERS = {
+    # Keys MUST match `MSuite Connected Account.platform` field options.
+    #
+    # Meta long-lived USER tokens (60-day) get extended in-place via
+    # `fb_exchange_token` — see `meta_base.refresh_long_lived_token`.
+    # The same user token underlies Facebook Pages + Instagram Business
+    # + Meta Ads, so all three share one refresher.
+    "Facebook":  meta_base.refresh_long_lived_token,
+    "Instagram": meta_base.refresh_long_lived_token,
+    "Meta Ads":  meta_base.refresh_long_lived_token,
+    "LinkedIn":  linkedin.refresh_token,
+    "Twitter":   twitter.refresh_token_fn,
+    "YouTube":   google.refresh_token_fn,
+    "Google Ads": google.refresh_token_fn,
+    # WhatsApp uses System User tokens — perpetual; no refresh needed.
+    # TikTok refresher pending TikTok publisher landing on the provider.
+}
+
+
+# ── Public API ───────────────────────────────────────────────────────────
+
+
+def is_platform_supported(platform: str) -> bool:
+    """True when an OAuth handler is registered for this platform key.
+
+    Used by the Connect page to grey out cards whose handler hasn't landed
+    yet (LinkedIn, Twitter, TikTok, Google) so operators see the roadmap
+    without being able to click into a broken flow.
+    """
+    return platform in _AUTH_URL_BUILDERS
+
+
+def build_auth_url(platform: str, client_name: str) -> dict:
+    """
+    Generate an OAuth URL for a platform. Stores CSRF state in Redis.
+
+    Args:
+        platform: Platform key (e.g., "meta_social", "google")
+        client_name: MSuite Client document name
+
+    Returns:
+        {"auth_url": "https://...", "state": "..."}
+
+    Raises:
+        OAuthError: if platform not supported or client not active
+    """
+    client_doc = frappe.get_doc("MSuite Client", client_name)
+    if client_doc.status != "Active":
+        frappe.throw("Client must be active to connect accounts", OAuthError)
+
+    builder = _AUTH_URL_BUILDERS.get(platform)
+    if not builder:
+        frappe.throw(f"Unsupported OAuth platform: {platform}", OAuthError)
+
+    # Generate and cache CSRF state
+    state = secrets.token_urlsafe(32)
+    frappe.cache.set_value(
+        f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
+        json.dumps({"client_name": client_name, "platform": platform}),
+        expires_in_sec=OAUTH_STATE_TTL_SECONDS,
+    )
+
+    auth_url = builder(client_name, state)
+    return {"auth_url": auth_url, "state": state}
+
+
+def process_oauth_callback(code: str, state: str) -> dict:
+    """
+    Process OAuth callback after user authorizes.
+
+    Validates CSRF state, exchanges code, discovers accounts,
+    stores them, pushes to client.
+
+    Args:
+        code: Authorization code from platform
+        state: CSRF state token from callback URL
+
+    Returns:
+        {"platform": "...", "connected": [...]}
+
+    Raises:
+        OAuthError: if state expired or platform not supported
+    """
+    # Validate CSRF state
+    cached = frappe.cache.get_value(f"{OAUTH_STATE_CACHE_PREFIX}:{state}")
+    if not cached:
+        frappe.throw("OAuth session expired. Please try again.", OAuthError)
+
+    state_data = json.loads(cached)
+    frappe.cache.delete_value(f"{OAUTH_STATE_CACHE_PREFIX}:{state}")
+
+    platform = state_data["platform"]
+    client_name = state_data["client_name"]
+
+    # Exchange code for token
+    exchanger = _TOKEN_EXCHANGERS.get(platform)
+    if not exchanger:
+        frappe.throw(f"No token exchanger for platform: {platform}", OAuthError)
+    token_data = exchanger(code, state_data)
+
+    # Discover accounts
+    discoverer = _ACCOUNT_DISCOVERERS.get(platform)
+    if not discoverer:
+        frappe.throw(f"No account discoverer for platform: {platform}", OAuthError)
+    connected = discoverer(client_name, token_data)
+
+    frappe.db.commit()
+    logger.info(
+        f"OAuth complete for {client_name}/{platform}: "
+        f"{len(connected)} accounts connected"
+    )
+    return {"platform": platform, "connected": connected}
+
+
+def exchange_whatsapp_code(
+    client_name: str,
+    code: str,
+    session_info: dict | None = None,
+    client_env: dict | None = None,
+) -> dict:
+    """
+    WhatsApp Embedded Signup code exchange.
+
+    Delegates to meta_whatsapp.exchange_code(). Not a standard OAuth
+    flow — uses Embedded Signup specific endpoints.
+
+    Args:
+        client_name: MSuite Client document name
+        code: Authorization code from FB.login()
+        session_info: Optional waba_id + phone_number_id from sessionInfoListener
+        client_env: Optional dict with ip_address, user_agent, browser, etc.
+
+    Returns:
+        {"waba_count": N, "phone_count": N}
+    """
+    client_doc = frappe.get_doc("MSuite Client", client_name)
+    if client_doc.status != "Active":
+        frappe.throw("Client must be active", OAuthError)
+
+    return meta_whatsapp.exchange_code(client_name, code, session_info, client_env)
+
+
+def refresh_expiring_tokens() -> dict:
+    """
+    Refresh tokens approaching expiry. Called by daily scheduler.
+
+    Finds Connected Accounts with token_expiry within
+    TOKEN_REFRESH_BUFFER_DAYS and calls the platform-specific refresher.
+
+    Returns:
+        {"refreshed": N, "failed": N, "expired": N}
+    """
+    cutoff = add_days(now(), TOKEN_REFRESH_BUFFER_DAYS)
+    accounts = frappe.get_all(
+        "MSuite Connected Account",
+        filters=[
+            ["status", "=", ConnectedAccountStatus.ACTIVE],
+            ["token_expiry", "is", "set"],
+            ["token_expiry", "<=", cutoff],
+        ],
+        fields=["name", "client", "platform", "account_id"],
+    )
+
+    summary = {"refreshed": 0, "failed": 0, "expired": 0}
+
+    for account in accounts:
+        try:
+            refresher = _TOKEN_REFRESHERS.get(account.platform)
+            if refresher:
+                refresher(account.name)
+                summary["refreshed"] += 1
+            else:
+                # No refresher — mark as expired
+                frappe.db.set_value(
+                    "MSuite Connected Account", account.name,
+                    "status", ConnectedAccountStatus.EXPIRED,
+                )
+                summary["expired"] += 1
+        except Exception as e:
+            logger.error(f"Token refresh failed for {account.name}: {e}")
+            summary["failed"] += 1
+
+    frappe.db.commit()
+    return summary

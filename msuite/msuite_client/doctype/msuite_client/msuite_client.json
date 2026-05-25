@@ -1,0 +1,126 @@
+{
+    "actions": [],
+    "autoname": "field:client_name",
+    "creation": "2026-04-05 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "details_section", "client_name", "customer", "client_url", "client_code",
+        "connection_section", "status", "api_key", "api_secret",
+        "activated_on",
+        "sync_section", "last_sync", "last_sync_status", "sync_fail_count"
+    ],
+    "fields": [
+        {
+            "fieldname": "details_section",
+            "fieldtype": "Section Break",
+            "label": "Client Details"
+        },
+        {
+            "fieldname": "client_name",
+            "fieldtype": "Data",
+            "label": "Client Name",
+            "reqd": 1,
+            "unique": 1,
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "customer",
+            "fieldtype": "Link",
+            "label": "Customer",
+            "options": "Customer",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "client_url",
+            "fieldtype": "Data",
+            "label": "Client URL",
+            "reqd": 1,
+            "description": "Frappe instance URL (e.g., https://client.example.com)"
+        },
+        {
+            "fieldname": "client_code",
+            "fieldtype": "Data",
+            "label": "Client Code",
+            "read_only": 1,
+            "unique": 1,
+            "description": "Auto-generated. Used for webhook routing (?ref=client_code)."
+        },
+        {
+            "fieldname": "connection_section",
+            "fieldtype": "Section Break",
+            "label": "Connection"
+        },
+        {
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "label": "Status",
+            "options": "Draft\nActive\nSuspended\nDisconnected",
+            "default": "Draft",
+            "in_list_view": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "api_key",
+            "fieldtype": "Data",
+            "label": "API Key",
+            "read_only": 1,
+            "hidden": 1
+        },
+        {
+            "fieldname": "api_secret",
+            "fieldtype": "Password",
+            "label": "API Secret",
+            "read_only": 1,
+            "hidden": 1
+        },
+        {
+            "fieldname": "activated_on",
+            "fieldtype": "Datetime",
+            "label": "Activated On",
+            "read_only": 1
+        },
+        {
+            "fieldname": "sync_section",
+            "fieldtype": "Section Break",
+            "label": "Sync Health"
+        },
+        {
+            "fieldname": "last_sync",
+            "fieldtype": "Datetime",
+            "label": "Last Sync",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_sync_status",
+            "fieldtype": "Select",
+            "label": "Last Sync Status",
+            "options": "\nSuccess\nFailed",
+            "read_only": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "sync_fail_count",
+            "fieldtype": "Int",
+            "label": "Consecutive Failures",
+            "read_only": 1,
+            "default": "0"
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-05 00:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite Client",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}

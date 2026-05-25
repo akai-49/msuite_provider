@@ -1,0 +1,7 @@
+MSuite Product
+MSuite Plan
+MSuite Bundle
+MSuite Customer Grant
+MSuite Coupon Usage
+MSuite Customer Group Membership
+MSuite Client

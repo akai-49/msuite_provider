@@ -1,0 +1,140 @@
+{
+    "actions": [],
+    "autoname": "field:app_name",
+    "creation": "2026-04-05 00:00:00",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "details_section", "app_name", "platform", "is_active",
+        "credentials_section", "app_id", "app_secret",
+        "whatsapp_section", "config_id", "allow_coexistence",
+        "oauth_section", "redirect_uri",
+        "webhook_section", "webhook_verify_token", "webhook_url",
+        "deauthorize_section", "deauthorize_callback_url"
+    ],
+    "fields": [
+        {
+            "fieldname": "details_section",
+            "fieldtype": "Section Break",
+            "label": "App Details"
+        },
+        {
+            "fieldname": "app_name",
+            "fieldtype": "Data",
+            "label": "App Name",
+            "reqd": 1,
+            "unique": 1,
+            "in_list_view": 1,
+            "bold": 1
+        },
+        {
+            "fieldname": "platform",
+            "fieldtype": "Select",
+            "label": "Platform",
+            "options": "Meta WhatsApp\nMeta Social\nGoogle\nTikTok\nLinkedIn\nTwitter",
+            "reqd": 1,
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "is_active",
+            "fieldtype": "Check",
+            "label": "Is Active",
+            "default": "1",
+            "in_list_view": 1
+        },
+        {
+            "fieldname": "credentials_section",
+            "fieldtype": "Section Break",
+            "label": "Credentials"
+        },
+        {
+            "fieldname": "app_id",
+            "fieldtype": "Data",
+            "label": "App ID",
+            "reqd": 1,
+            "description": "Platform App/Client ID"
+        },
+        {
+            "fieldname": "app_secret",
+            "fieldtype": "Password",
+            "label": "App Secret",
+            "reqd": 1,
+            "description": "Encrypted. Never shared with client instances."
+        },
+        {
+            "fieldname": "whatsapp_section",
+            "fieldtype": "Section Break",
+            "label": "WhatsApp Embedded Signup",
+            "depends_on": "eval:doc.platform=='Meta WhatsApp'"
+        },
+        {
+            "fieldname": "config_id",
+            "fieldtype": "Data",
+            "label": "Embedded Signup Config ID",
+            "description": "From Meta Business Manager → WhatsApp → Embedded Signup",
+            "mandatory_depends_on": "eval:doc.platform=='Meta WhatsApp'"
+        },
+        {
+            "fieldname": "allow_coexistence",
+            "fieldtype": "Check",
+            "label": "Allow Coexistence Onboarding",
+            "default": "1",
+            "description": "Allow customers who already use WhatsApp Business App to also connect via Cloud API (same number, synced chats)"
+        },
+        {
+            "fieldname": "oauth_section",
+            "fieldtype": "Section Break",
+            "label": "OAuth",
+            "depends_on": "eval:doc.platform!='Meta WhatsApp'"
+        },
+        {
+            "fieldname": "redirect_uri",
+            "fieldtype": "Data",
+            "label": "OAuth Redirect URI",
+            "description": "Redirect URI registered with the platform"
+        },
+        {
+            "fieldname": "webhook_section",
+            "fieldtype": "Section Break",
+            "label": "Webhook"
+        },
+        {
+            "fieldname": "webhook_verify_token",
+            "fieldtype": "Data",
+            "label": "Webhook Verify Token",
+            "description": "Token the platform sends to verify your webhook"
+        },
+        {
+            "fieldname": "webhook_url",
+            "fieldtype": "Data",
+            "label": "Webhook URL",
+            "description": "Auto-generated from site URL. Edit if using ngrok or custom domain."
+        },
+        {
+            "fieldname": "deauthorize_section",
+            "fieldtype": "Section Break",
+            "label": "Deauthorize Callback",
+            "description": "Set this URL in Meta App Dashboard → Settings → Advanced → Deauthorize Callback URL"
+        },
+        {
+            "fieldname": "deauthorize_callback_url",
+            "fieldtype": "Data",
+            "label": "Deauthorize Callback URL",
+            "description": "Auto-generated from site URL. Edit if using ngrok or custom domain."
+        }
+    ],
+    "index_web_pages_for_search": 0,
+    "links": [],
+    "modified": "2026-04-05 12:00:00",
+    "modified_by": "Administrator",
+    "module": "MSuite Client",
+    "name": "MSuite App",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+        {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1, "delete": 1}
+    ],
+    "sort_field": "modified",
+    "sort_order": "DESC"
+}
