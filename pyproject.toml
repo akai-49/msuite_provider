@@ -1,0 +1,21 @@
+[project]
+name = "msuite"
+dynamic = ["version"]
+requires-python = ">=3.10"
+description = "MSuite — SaaS subscription and entitlement management"
+authors = [{name = "MSuite", email = "dev@msuite.com"}]
+license = {text = "MIT"}
+# Runtime deps not managed by bench. frappe + erpnext are listed under
+# [tool.bench.frappe-dependencies] below so bench's own installer
+# wires them at the right point in the install flow.
+dependencies = []
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+# Bench reads this section to install Frappe-flavoured siblings
+# alongside this app — same shape msuite_provider/pyproject.toml uses.
+[tool.bench.frappe-dependencies]
+frappe = ">=16.0.0"
+erpnext = ">=15.0.0"
