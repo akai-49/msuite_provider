@@ -25,14 +25,29 @@
     ];
 
     const state = {
-        clientName: null,
-        config:     null,
+        clientName:        null,
+        config:            null,
+        clientInitiated:   null,  // { state, client_name, return_url, launch }
     };
 
     // ── Bootstrap ────────────────────────────────────────────────────────
     document.addEventListener("DOMContentLoaded", init);
 
     function init() {
+        // Detect client-initiated mode injected by connect.py + connect.html
+        // (the marketer was redirected here from the client's Connections
+        // page). Skip the admin dropdown, auto-load that one client, and
+        // auto-launch the requested platform (currently WA only).
+        const ci = window.MSUITE_CLIENT_INITIATED;
+        if (ci && ci.state && ci.client_name) {
+            state.clientInitiated = ci;
+            hide("#client-selector-block");
+            show("#app");
+            hide("#loading");
+            state.clientName = ci.client_name;
+            loadClient(ci.client_name, { autoLaunch: ci.launch || "whatsapp" });
+            return;
+        }
         loadClients();
         bindClientSelector();
     }
@@ -81,10 +96,17 @@
     }
 
     // ── Load client config ───────────────────────────────────────────────
-    function loadClient(clientName) {
+    function loadClient(clientName, opts) {
+        // Pass `state` when present so get_connect_config skips the
+        // System Manager permission check (state proves the caller).
+        const args = { client_name: clientName };
+        if (state.clientInitiated && state.clientInitiated.state) {
+            args.state = state.clientInitiated.state;
+        }
+
         frappe.call({
             method: METHOD_CONFIG,
-            args: { client_name: clientName },
+            args,
             callback(r) {
                 if (!r.message || r.message.status !== "success") {
                     showAlert("Failed to load client config", "error");
@@ -93,8 +115,31 @@
                 state.clientName = clientName;
                 state.config     = r.message.data;
                 renderAll();
+
+                // Auto-launch the requested platform on first paint when
+                // the user arrived here from the client side. We match
+                // the launch key against the platform catalog so a
+                // future ?launch=linkedin would naturally route to the
+                // OAuth-popup branch.
+                if (opts && opts.autoLaunch) {
+                    autoLaunchPlatform(opts.autoLaunch);
+                }
             },
         });
+    }
+
+    function autoLaunchPlatform(key) {
+        const platform = (state.config.platforms || [])
+            .find((p) => p.key === key);
+        if (!platform) {
+            showAlert(`Platform "${key}" not configured on this provider.`, "error");
+            return;
+        }
+        if (!platform.ready) {
+            showAlert(platform.reason || `${platform.label} isn't ready on this provider.`, "error");
+            return;
+        }
+        dispatchConnect(platform);
     }
 
     function renderAll() {
@@ -251,6 +296,12 @@
             args.event           = session.event || "FINISH";
             args.business_id     = session.data.business_id || "";
         }
+        // Client-initiated mode: forward the state so the backend
+        // can authorize without a System Manager session AND return
+        // a redirect_to URL pointing back at the client.
+        if (state.clientInitiated && state.clientInitiated.state) {
+            args.state = state.clientInitiated.state;
+        }
 
         frappe.call({
             method: METHOD_EXCHANGE_WA,
@@ -262,9 +313,31 @@
                         `Connected ${d.waba_count} WABA(s) with ${d.phone_count} phone number(s).`,
                         "success"
                     );
+                    // Client-initiated: bounce back to the client's
+                    // Connections page with success params. A small
+                    // delay lets the marketer read the success alert
+                    // before the redirect kicks in.
+                    if (d.redirect_to) {
+                        setTimeout(() => { window.location.href = d.redirect_to; }, 1500);
+                        return;
+                    }
                     loadClient(state.clientName);
                 } else {
-                    showAlert("WhatsApp connection failed.", "error");
+                    const msg = (r.message && r.message.message)
+                        || "WhatsApp connection failed.";
+                    showAlert(msg, "error");
+                    // Client-initiated: redirect back with error so the
+                    // Connections page can show a friendly message and
+                    // the user isn't stranded on the provider domain.
+                    if (state.clientInitiated && state.clientInitiated.return_url) {
+                        setTimeout(() => {
+                            const url = state.clientInitiated.return_url;
+                            const sep = url.indexOf("?") >= 0 ? "&" : "?";
+                            window.location.href =
+                                `${url}${sep}status=error&platform=whatsapp`
+                                + `&message=${encodeURIComponent(msg)}`;
+                        }, 2500);
+                    }
                 }
             },
             error(e) {

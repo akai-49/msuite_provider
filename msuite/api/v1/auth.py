@@ -5,12 +5,19 @@ Handles platform authentication flows:
   - start_auth: generates OAuth URL for popup
   - auth_callback: receives OAuth redirect, stores accounts, closes popup
   - exchange_whatsapp: WhatsApp Embedded Signup code exchange
+  - start_whatsapp_embedded_signup: client-initiated WA signup (redirect → /connect)
 """
 import json
+import secrets
 
 import frappe
 
-from msuite.constants import ErrorCode, MSUITE_LOGGER_NAME
+from msuite.constants import (
+    ErrorCode,
+    MSUITE_LOGGER_NAME,
+    OAUTH_STATE_CACHE_PREFIX,
+    OAUTH_STATE_TTL_SECONDS,
+)
 from msuite.utils.validators import (
     success_response,
     error_response,
@@ -19,6 +26,13 @@ from msuite.utils.validators import (
 )
 
 logger = frappe.logger(MSUITE_LOGGER_NAME)
+
+
+# Platform key used to namespace the WhatsApp Embedded Signup state in the
+# OAuth state cache. Distinct from the standard OAuth platform keys
+# (`meta_social`, `meta_ads`, …) because the WA flow doesn't use the
+# `_AUTH_URL_BUILDERS` registry — it has its own exchange endpoint.
+_WHATSAPP_STATE_PLATFORM = "whatsapp"
 
 
 @frappe.whitelist()
@@ -116,6 +130,91 @@ def list_configured_platforms_for_client(client_name: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True)
+def start_whatsapp_embedded_signup(client_name: str, return_url: str = "") -> dict:
+    """
+    Client-initiated WhatsApp Embedded Signup entry.
+
+    WhatsApp Business onboarding can't use the standard OAuth-popup flow
+    used by Facebook/Instagram/etc — Meta requires `FB.login()` Embedded
+    Signup from the Facebook JS SDK, which needs a pre-registered host.
+    That host is the provider, not the client. So when the marketer
+    clicks "Connect WhatsApp" on the client's Connections Page:
+
+      1. Client calls this endpoint with `return_url` = where to land
+         the user back on the client after signup finishes.
+      2. We mint a one-time state, cache it (reusing the same Redis
+         cache + 600s TTL the standard OAuth uses), and return an
+         auth_url that points at the provider's `/connect` page.
+      3. Client redirects the user's browser to that URL.
+      4. `/connect` (state-aware) auto-launches `FB.login()` for WA;
+         `exchange_whatsapp` runs with the same state and at the end
+         redirects the user back to `return_url`.
+
+    Auth: same `X-MSuite-Provider-Key/Secret` headers as
+    `start_auth_for_client`.
+
+    Args:
+        client_name: MSuite Client doc name or client_code.
+        return_url: Absolute URL on the client to land the user on after
+            signup. Required — without it the user is stranded on the
+            provider's /connect page after a successful exchange.
+
+    Returns:
+        {"auth_url": "https://<provider>/connect?state=...&launch=whatsapp",
+         "state":    "..."}
+    """
+    try:
+        client_doc = require_msuite_client_auth(client_name)
+
+        if not (return_url or "").startswith(("http://", "https://")):
+            return error_response(
+                ErrorCode.INVALID_INPUT,
+                "return_url must be an absolute http(s):// URL.",
+            )
+
+        # Mint state, cache with client_name + return_url. Reuses the
+        # standard OAuth state plumbing so cleanup / TTL / replay-safety
+        # behave identically (single-use; `exchange_whatsapp` deletes
+        # the key after a successful exchange).
+        state = secrets.token_urlsafe(32)
+        frappe.cache.set_value(
+            f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
+            json.dumps({
+                "client_name":     client_doc.name,
+                "platform":        _WHATSAPP_STATE_PLATFORM,
+                "return_url":      return_url,
+                "initiated_from":  "client",
+            }),
+            expires_in_sec=OAUTH_STATE_TTL_SECONDS,
+        )
+
+        # Use the site's configured host_name directly — `frappe.utils.get_url()`
+        # appends the bench's webserver port (8001) in developer_mode even when
+        # host_name is a tunneled HTTPS URL, which breaks the Embedded Signup
+        # callback (Facebook rejects `:8001` on the ngrok hostname). Fall back
+        # to get_url only when host_name isn't set (running on an actual prod
+        # domain via reverse-proxy, where port wrangling isn't needed).
+        provider_base = (
+            (frappe.local.conf.host_name or frappe.local.conf.hostname or "").rstrip("/")
+            or frappe.utils.get_url().rstrip("/")
+        )
+        auth_url = (
+            f"{provider_base}/connect?state={state}&launch=whatsapp"
+        )
+        return success_response({"auth_url": auth_url, "state": state})
+
+    except frappe.AuthenticationError as e:
+        return error_response(ErrorCode.PERMISSION_DENIED, str(e))
+    except frappe.PermissionError as e:
+        return error_response(ErrorCode.PERMISSION_DENIED, str(e))
+    except Exception as e:
+        logger.error(
+            f"start_whatsapp_embedded_signup failed: {e}", exc_info=True,
+        )
+        return error_response(ErrorCode.INVALID_INPUT, str(e))
+
+
+@frappe.whitelist(allow_guest=True)
 def auth_callback(**kwargs) -> None:
     """
     OAuth callback endpoint. Called by platform redirect in a popup window.
@@ -174,39 +273,103 @@ def auth_callback(**kwargs) -> None:
         )
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def exchange_whatsapp(
-    client_name: str,
-    code: str,
+    client_name: str = "",
+    code: str = "",
     waba_id: str = "",
     phone_number_id: str = "",
     event: str = "",
     business_id: str = "",
+    state: str = "",
 ) -> dict:
     """
     Exchange WhatsApp Embedded Signup authorization code.
 
-    Called from MSuite Client JS after FB.login() popup completes.
-    Optionally receives session_info fields from sessionInfoListener (v2).
+    Two callers, two auth paths — but the SAME exchange logic underneath:
+
+      1. **Provider admin** (`/connect` opened directly by an operator):
+         No `state`; falls back to `require_system_manager_or_msuite_manager()`.
+         `client_name` comes from the form's dropdown.
+
+      2. **Client-initiated** (`/connect?state=…&launch=whatsapp`):
+         `state` was minted by `start_whatsapp_embedded_signup`. Validating
+         the state proves the caller came from a registered client (state
+         only mints via `X-MSuite-Provider-Key/Secret` auth). `client_name`
+         is read from the cached state, NOT the form — the operator role
+         check is skipped because the state itself is the credential.
 
     Args:
-        client_name: MSuite Client document name
-        code: Authorization code from FB.login() callback
-        waba_id: Optional WABA ID from sessionInfoListener
-        phone_number_id: Optional phone number ID from sessionInfoListener
-        event: Optional event type (FINISH, FINISH_ONLY_WABA, COEXISTENCE, CANCEL, ERROR)
-        business_id: Optional business ID (from coexistence event)
+        client_name: MSuite Client document name (admin flow only; ignored
+            when `state` is present and valid).
+        code: Authorization code from FB.login() callback.
+        waba_id / phone_number_id / event / business_id: Optional
+            session_info fields from FB's sessionInfoListener.
+        state: One-time state token from `start_whatsapp_embedded_signup`.
+            When present and valid, switches to client-initiated mode.
 
     Returns:
-        Success dict with WABA and phone counts
+        Success dict with WABA + phone counts. When state-mode, also
+        includes `redirect_to` so the page JS knows where to send the
+        user after success.
     """
     try:
-        require_system_manager_or_msuite_manager()
+        # ── Auth + client_name resolution ────────────────────────────
+        state_data: dict = {}
+        if state:
+            cached = frappe.cache.get_value(
+                f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
+            )
+            if not cached:
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session expired. Please retry from your "
+                    "Connections page.",
+                )
+            try:
+                state_data = json.loads(cached)
+            except (TypeError, ValueError):
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session is corrupted. Please retry.",
+                )
+            if state_data.get("platform") != _WHATSAPP_STATE_PLATFORM:
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session is for a different platform.",
+                )
+            # Override client_name from state — the form's value is
+            # ignored in client-initiated mode (the state is signed +
+            # scoped to one client).
+            client_name = state_data.get("client_name") or ""
+            # Burn the state — single-use against replay. If the
+            # downstream exchange fails the client can retry by going
+            # back to the Connections page; we don't want a leaked
+            # state token to authorise a second exchange.
+            frappe.cache.delete_value(
+                f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
+            )
+        else:
+            require_system_manager_or_msuite_manager()
 
-        # Capture client environment from the HTTP request
+        if not client_name:
+            return error_response(
+                ErrorCode.INVALID_INPUT,
+                "client_name is required.",
+            )
+        if not code:
+            return error_response(
+                ErrorCode.INVALID_INPUT,
+                "code is required.",
+            )
+
+        # ── Common exchange logic — unchanged ────────────────────────
         client_env = _capture_client_env()
+        if state_data:
+            # Audit trail: marks the consent record so support can tell
+            # admin-initiated from client-initiated flows apart.
+            client_env["initiated_from"] = state_data.get("initiated_from", "client")
 
-        # Build session_info from all available fields
         session_info = {}
         if waba_id:
             session_info["waba_id"] = waba_id
@@ -219,10 +382,25 @@ def exchange_whatsapp(
 
         from msuite.services.oauth import exchange_whatsapp_code
         result = exchange_whatsapp_code(client_name, code, session_info, client_env)
+
+        # Tell the page where to send the user next. Admin flow has no
+        # return_url so the page stays put and shows the success alert.
+        if state_data and state_data.get("return_url"):
+            sep = "&" if "?" in state_data["return_url"] else "?"
+            result = {
+                **result,
+                "redirect_to": (
+                    f"{state_data['return_url']}{sep}"
+                    f"status=connected&platform=whatsapp"
+                    f"&waba_count={result.get('waba_count', 0)}"
+                    f"&phone_count={result.get('phone_count', 0)}"
+                ),
+            }
         return success_response(result)
     except frappe.PermissionError:
         return error_response(ErrorCode.PERMISSION_DENIED, "Permission denied")
     except Exception as e:
+        logger.error(f"exchange_whatsapp failed: {e}", exc_info=True)
         return error_response(ErrorCode.INVALID_INPUT, str(e))
 
 
@@ -379,8 +557,8 @@ _CONNECT_PLATFORMS = [
 ]
 
 
-@frappe.whitelist()
-def get_connect_config(client_name: str) -> dict:
+@frappe.whitelist(allow_guest=True)
+def get_connect_config(client_name: str, state: str = "") -> dict:
     """
     Return the rendering data for the `/connect` page.
 
@@ -388,9 +566,43 @@ def get_connect_config(client_name: str) -> dict:
     learns whether the platform is `ready` (MSuite App configured + OAuth
     handler registered). Secrets are never included — only app_ids and
     flow-level metadata the browser needs.
+
+    Two auth paths (mirror of `exchange_whatsapp`):
+      - With `state`: a cached client-initiated state proves the caller.
+        We validate state platform == "whatsapp" and that the cached
+        client_name matches the requested one. State is NOT consumed
+        here — only by `exchange_whatsapp` at the end of the flow.
+      - Without `state`: standard System Manager / MSuite Manager check.
     """
     try:
-        require_system_manager_or_msuite_manager()
+        if state:
+            cached = frappe.cache.get_value(
+                f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
+            )
+            if not cached:
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session expired.",
+                )
+            try:
+                state_data = json.loads(cached)
+            except (TypeError, ValueError):
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session is corrupted.",
+                )
+            if state_data.get("platform") != _WHATSAPP_STATE_PLATFORM:
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session is for a different platform.",
+                )
+            if state_data.get("client_name") != client_name:
+                return error_response(
+                    ErrorCode.PERMISSION_DENIED,
+                    "Signup session client mismatch.",
+                )
+        else:
+            require_system_manager_or_msuite_manager()
         client = frappe.get_doc("MSuite Client", client_name)
 
         return success_response({

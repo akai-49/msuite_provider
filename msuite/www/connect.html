@@ -212,6 +212,29 @@
 {% endblock %}
 
 {% block page_content %}
+{# State present but invalid/expired — short-circuit with a friendly
+   page. Without this branch the JS would fall through to admin mode
+   and 403 on `frappe.client.get_list` (guest). #}
+{% if state_error %}
+<div class="connect-container">
+    <div class="connect-header">
+        <h1>Signup session expired</h1>
+    </div>
+    <div class="alert alert-warning" style="margin: 24px 0;">
+        {{ state_error }}
+    </div>
+</div>
+{% else %}
+{# Client-initiated mode: expose the state payload to JS so the page
+   can skip the dropdown and auto-launch the WhatsApp Embedded Signup
+   flow. Without this block the JS falls through to the admin layout
+   (operator picks a client from the dropdown). #}
+{% if client_initiated %}
+<script>
+window.MSUITE_CLIENT_INITIATED = {{ client_initiated | tojson }};
+</script>
+{% endif %}
+
 <div class="connect-container">
     <div class="connect-header">
         <h1>MSuite Connect</h1>
@@ -221,7 +244,9 @@
     <div id="loading">Loading…</div>
 
     <div id="app" style="display: none;">
-        <div class="client-selector">
+        {# The client-selector is hidden in client-initiated mode — the
+           client_name comes from the signed state, not a dropdown. #}
+        <div class="client-selector" id="client-selector-block">
             <label>Select Client</label>
             <select id="client-select">
                 <option value="">— Select a client —</option>
@@ -242,9 +267,14 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block base_scripts %}
 {{ super() }}
-<script src="/assets/msuite/js/connect.js"></script>
+{# Cache-bust via mtime so the browser fetches a fresh connect.js after
+   every `bench build`. Frappe doesn't version www-page asset URLs the
+   way it does for Vue bundles, so without this the browser pins the
+   old script forever. #}
+<script src="/assets/msuite/js/connect.js?v={{ asset_version }}"></script>
 {% endblock %}

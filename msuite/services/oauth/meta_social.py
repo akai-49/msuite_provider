@@ -42,14 +42,43 @@ from .meta_base import (
 logger = frappe.logger(MSUITE_LOGGER_NAME)
 
 META_SOCIAL_SCOPES = [
-    "pages_manage_posts",
-    "pages_read_engagement",
-    "pages_show_list",
-    "instagram_basic",
-    "instagram_content_publish",
-    "instagram_manage_comments",
-    "instagram_manage_insights",
+    # ── Page-level scopes ─────────────────────────────────────────────
+    "pages_manage_posts",          # publish organic posts
+    "pages_read_engagement",       # read posts + Page-authored comments
+    "pages_read_user_content",     # read user-authored content (comments, reviews)
+    "pages_manage_engagement",     # reply / hide / delete comments
+    "pages_messaging",             # send + receive FB Page DMs
+    "pages_manage_metadata",       # subscribe webhooks per-Page (subscribed_apps)
+    "pages_show_list",             # enumerate Pages on /me/accounts
+    "pages_manage_ads",            # create Lead Gen Forms + boost posts via Page
+    "leads_retrieval",             # read submitted leads from /leadgen + webhook
+    # ── Instagram scopes (FB-Login flow — instagram_* family, NOT
+    # instagram_business_*; the latter is for IG Business Login only). ─
+    "instagram_basic",                  # read IG profile
+    "instagram_content_publish",        # publish IG media
+    "instagram_manage_comments",        # reply / hide / delete IG comments
+    "instagram_manage_messages",        # send + receive IG DMs
+    "instagram_manage_insights",        # post analytics
 ]
+
+
+# Webhook fields we want delivered for each Page. Sent once per Page in
+# `_subscribe_page_to_webhooks` immediately after upserting the Connected
+# Account. Same field list covers BOTH FB DM/comment events on the `page`
+# object AND IG DM/comment events on the linked `instagram` object — Meta
+# subscribes IG via the Page binding when the IG account is linked.
+PAGE_WEBHOOK_FIELDS = (
+    # Facebook Page DMs + delivery confirmations
+    "messages",
+    "messaging_postbacks",
+    "message_echoes",
+    "message_reactions",
+    "message_deliveries",
+    "message_reads",
+    # Facebook Page comments / posts / likes (item="comment" is the
+    # comment event; reactions + posts share the same `feed` field).
+    "feed",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +209,13 @@ def _discover_pages_and_instagram(
                 "business_name":     biz_name,
             })
 
+            # Subscribe THIS Page to our webhook fields. Failure is logged
+            # but doesn't abort the OAuth flow — the customer's account is
+            # still connected for reads, just won't get realtime DM/comment
+            # events until we retry. `_subscribe_page_to_webhooks` records
+            # state on Connected Account for that retry.
+            _subscribe_page_to_webhooks(ca_name, page_id, page_token)
+
             ig_result = _discover_instagram_for_page(
                 client_name, page_id, page_name, page_token, user_token,
                 app_name, expires_in, biz_id, auth_account,
@@ -254,3 +290,76 @@ def _discover_instagram_for_page(
     except Exception as e:
         logger.error(f"Instagram check failed for page {page_id}: {e}")
         return None
+
+
+# ---------------------------------------------------------------------------
+# Per-Page webhook subscription
+# ---------------------------------------------------------------------------
+
+
+def _subscribe_page_to_webhooks(connected_account_name: str,
+                                page_id: str,
+                                page_token: str) -> None:
+    """Subscribe one Page to our webhook fields via
+    `POST /{page-id}/subscribed_apps`.
+
+    Meta requires this per-Page even when the App Dashboard already lists
+    the fields globally — the dashboard says WHICH events we'd like to
+    receive, the per-Page call says WHICH Pages should fire them at us.
+    Skipping this is the silent-no-events bug: customers OAuth'd
+    successfully and we still got nothing.
+
+    Records the outcome on `MSuite Connected Account`:
+      - `subscribed_fields` (JSON) — fields Meta accepted
+      - `subscribed_at`      — timestamp of the last success
+      - `last_subscription_error` — string from the last failure (empty on success)
+
+    Idempotent — calling it twice for the same Page is safe; Meta replies
+    `{success: true}` either way.
+    """
+    fields_csv = ",".join(PAGE_WEBHOOK_FIELDS)
+    err_msg = ""
+    success_fields = ""
+    try:
+        resp = requests.post(
+            f"{GRAPH_API_BASE}/{page_id}/subscribed_apps",
+            data={
+                "subscribed_fields": fields_csv,
+                "access_token":      page_token,
+            },
+            timeout=15,
+        )
+        body = resp.json() if resp.content else {}
+        if resp.ok and (body.get("success") in (True, "true", 1)):
+            success_fields = fields_csv
+            logger.info(
+                f"Page {page_id} subscribed to webhook fields: {fields_csv}"
+            )
+        else:
+            err_msg = (
+                (body.get("error") or {}).get("message")
+                or f"HTTP {resp.status_code}: {resp.text[:200]}"
+            )
+            logger.warning(
+                f"Page {page_id} subscription failed: {err_msg}"
+            )
+    except requests.RequestException as e:
+        err_msg = f"network: {e}"
+        logger.warning(f"Page {page_id} subscription network error: {e}")
+
+    # Persist outcome on the Connected Account — never raises; failed
+    # subscriptions go into `last_subscription_error` so a scheduler /
+    # admin tool can retry without re-running full OAuth.
+    try:
+        updates: dict = {"last_subscription_error": err_msg or ""}
+        if success_fields:
+            updates["subscribed_fields"] = success_fields
+            updates["subscribed_at"] = now()
+        frappe.db.set_value(
+            "MSuite Connected Account", connected_account_name,
+            updates, update_modified=False,
+        )
+    except Exception as e:
+        logger.error(
+            f"Could not persist subscription state on {connected_account_name}: {e}"
+        )

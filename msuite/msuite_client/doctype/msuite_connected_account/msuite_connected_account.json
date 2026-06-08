@@ -9,7 +9,9 @@
         "cb_account", "status", "needs_reauth", "connected_via", "msuite_app",
         "token_section", "access_token", "refresh_token", "token_type", "token_expiry",
         "timestamps_section", "connected_at", "last_refreshed",
-        "last_refresh_attempt_at", "last_refresh_error"
+        "last_refresh_attempt_at", "last_refresh_error",
+        "webhook_section", "subscribed_fields", "subscribed_at",
+        "last_subscription_error"
     ],
     "fields": [
         {
@@ -156,6 +158,32 @@
             "label": "Last Refresh Error",
             "read_only": 1,
             "description": "Diagnostic for the most recent failed refresh."
+        },
+        {
+            "fieldname": "webhook_section",
+            "fieldtype": "Section Break",
+            "label": "Webhook Subscription",
+            "depends_on": "eval:doc.platform === 'Facebook' || doc.platform === 'Instagram'"
+        },
+        {
+            "fieldname": "subscribed_fields",
+            "fieldtype": "Small Text",
+            "label": "Subscribed Webhook Fields",
+            "read_only": 1,
+            "description": "Comma-separated Meta webhook fields the provider subscribed this Page to via /subscribed_apps. Empty = never subscribed (no realtime events will arrive)."
+        },
+        {
+            "fieldname": "subscribed_at",
+            "fieldtype": "Datetime",
+            "label": "Last Subscribed At",
+            "read_only": 1
+        },
+        {
+            "fieldname": "last_subscription_error",
+            "fieldtype": "Small Text",
+            "label": "Last Subscription Error",
+            "read_only": 1,
+            "description": "Diagnostic for the most recent failed /subscribed_apps call. Cleared on the next success."
         }
     ],
     "index_web_pages_for_search": 0,

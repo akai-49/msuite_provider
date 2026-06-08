@@ -157,10 +157,16 @@ def _dispatch_dm(page_id: str, entry: dict, object_type: str) -> None:
     )
 
 
-# Per-field client endpoint map. Adding a new Meta webhook field
-# (e.g. 'feed', 'comments') is a one-line change here.
+# Per-field client endpoint map. Adding a new Meta webhook field is a
+# one-line change here — the provider routes everything to the client
+# by Page id; the client decides what to do with each field.
 _FIELD_TO_ENDPOINT = {
-    "leadgen": "msuite_workspace.api.v1.ads.lead_events.receive_lead_event",
+    "leadgen":  "msuite_workspace.api.v1.ads.lead_events.receive_lead_event",
+    # FB Page wall events (posts, comments, reactions). Provider relays
+    # verbatim; client filters by `value.item` (comment / reaction / post).
+    "feed":     "msuite_workspace.inbox.api.v1.webhook.receive_meta_feed",
+    # IG comments on the connected Business/Creator account's media.
+    "comments": "msuite_workspace.inbox.api.v1.webhook.receive_meta_ig_comments",
 }
 
 
@@ -332,11 +338,20 @@ def _forward_to_client(waba_id: str, payload: dict):
         as_dict=True,
     )
     if not connected:
-        logger.warning(f"Webhook for unknown WABA {waba_id} — no active Connected Account")
+        # Shared Meta App receives webhooks for every WABA across all
+        # tenants. Dropping unknown ones is correct routing. Debug-level
+        # so other-tenant traffic doesn't spam the log.
+        logger.debug(f"WhatsApp webhook for unknown WABA {waba_id} — dropping")
         return
 
     client_doc = frappe.get_doc("MSuite Client", connected.client)
     if client_doc.status != "Active":
+        # Client is suspended / paused — surface as warning so support
+        # can spot a stuck onboarding rather than a routing bug.
+        logger.warning(
+            f"WhatsApp webhook for WABA {waba_id} → client {connected.client} "
+            f"is {client_doc.status}, NOT forwarding"
+        )
         return
 
     _post_to_client(
@@ -373,10 +388,15 @@ def _post_to_client(client_doc, endpoint: str, payload: dict) -> None:
             timeout=15,
         )
         if resp.status_code != 200:
+            # Client returned non-200 — surface so client-side bugs are
+            # diagnosable without enabling debug logs everywhere.
             logger.warning(
                 f"Client forward to {endpoint} returned {resp.status_code} "
                 f"({client_doc.name}): {resp.text[:200]}"
             )
+        # Success path is intentionally silent — every healthy webhook
+        # would otherwise write a log line and dwarf the signal we care
+        # about (failures + drops).
     except Exception as e:
         logger.error(f"Failed to forward to {client_doc.name} {endpoint}: {e}")
 
