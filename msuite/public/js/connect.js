@@ -109,7 +109,8 @@
             args,
             callback(r) {
                 if (!r.message || r.message.status !== "success") {
-                    showAlert("Failed to load client config", "error");
+                    const msg = (r.message && r.message.message) || "Failed to load client config";
+                    showAlert(msg, "error");
                     return;
                 }
                 state.clientName = clientName;

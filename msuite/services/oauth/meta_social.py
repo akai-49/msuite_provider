@@ -168,7 +168,7 @@ def _discover_pages_and_instagram(
             f"{GRAPH_API_BASE}/me/accounts",
             params={
                 "access_token": user_token,
-                "fields":       "id,name,access_token,category",
+                "fields":       "id,name,access_token,category,picture",
                 "limit":        200,
             },
             timeout=30,
@@ -178,6 +178,8 @@ def _discover_pages_and_instagram(
             page_id    = page["id"]
             page_name  = page.get("name", "")
             page_token = page.get("access_token", "")
+            picture_data = page.get("picture", {}).get("data", {})
+            avatar_url = picture_data.get("url") or ""
 
             biz_info     = page_biz_map.get(page_name, {})
             biz_id       = biz_info.get("business_id", "")
@@ -207,6 +209,7 @@ def _discover_pages_and_instagram(
                 "page_access_token": page_token,
                 "business_id":       biz_id,
                 "business_name":     biz_name,
+                "avatar_url":        avatar_url,
             })
 
             # Subscribe THIS Page to our webhook fields. Failure is logged
@@ -245,7 +248,7 @@ def _discover_instagram_for_page(
         resp = requests.get(
             f"{GRAPH_API_BASE}/{page_id}",
             params={
-                "fields":       "instagram_business_account{id,username,name}",
+                "fields":       "instagram_business_account{id,username,name,profile_picture_url}",
                 "access_token": page_token or user_token,
             },
             timeout=30,
@@ -257,6 +260,7 @@ def _discover_instagram_for_page(
         ig_id       = ig_account["id"]
         ig_username = ig_account.get("username", "")
         ig_name     = ig_account.get("name", ig_username)
+        ig_avatar_url = ig_account.get("profile_picture_url") or ""
 
         ca_name = upsert_connected_account(
             client_name, Platform.INSTAGRAM, ig_id, {
@@ -283,6 +287,7 @@ def _discover_instagram_for_page(
             "linked_page_id":   page_id,
             "linked_page_name": page_name,
             "business_id":      biz_id,
+            "avatar_url":       ig_avatar_url,
         })
 
         return {"platform": "Instagram", "name": f"@{ig_username}"}

@@ -134,48 +134,38 @@ def start_whatsapp_embedded_signup(client_name: str, return_url: str = "") -> di
     """
     Client-initiated WhatsApp Embedded Signup entry.
 
-    WhatsApp Business onboarding can't use the standard OAuth-popup flow
-    used by Facebook/Instagram/etc — Meta requires `FB.login()` Embedded
-    Signup from the Facebook JS SDK, which needs a pre-registered host.
-    That host is the provider, not the client. So when the marketer
-    clicks "Connect WhatsApp" on the client's Connections Page:
-
-      1. Client calls this endpoint with `return_url` = where to land
-         the user back on the client after signup finishes.
-      2. We mint a one-time state, cache it (reusing the same Redis
-         cache + 600s TTL the standard OAuth uses), and return an
-         auth_url that points at the provider's `/connect` page.
-      3. Client redirects the user's browser to that URL.
-      4. `/connect` (state-aware) auto-launches `FB.login()` for WA;
-         `exchange_whatsapp` runs with the same state and at the end
-         redirects the user back to `return_url`.
+    Generates a direct Meta OAuth dialog URL for WhatsApp Embedded Signup.
+    Opens in a popup on the client side, bypassing the provider's /connect page.
 
     Auth: same `X-MSuite-Provider-Key/Secret` headers as
     `start_auth_for_client`.
 
     Args:
         client_name: MSuite Client doc name or client_code.
-        return_url: Absolute URL on the client to land the user on after
-            signup. Required — without it the user is stranded on the
-            provider's /connect page after a successful exchange.
+        return_url: Absolute URL on the client.
 
     Returns:
-        {"auth_url": "https://<provider>/connect?state=...&launch=whatsapp",
+        {"auth_url": "https://www.facebook.com/v25.0/dialog/oauth?...",
          "state":    "..."}
     """
     try:
         client_doc = require_msuite_client_auth(client_name)
 
-        if not (return_url or "").startswith(("http://", "https://")):
+        app = frappe.db.get_value(
+            "MSuite App",
+            {"platform": "Meta WhatsApp", "is_active": 1},
+            ["app_id", "config_id", "redirect_uri"],
+            as_dict=True,
+        )
+        if not app or not app.get("app_id") or not app.get("config_id"):
             return error_response(
                 ErrorCode.INVALID_INPUT,
-                "return_url must be an absolute http(s):// URL.",
+                "Meta WhatsApp app is not configured or active on the provider."
             )
 
         # Mint state, cache with client_name + return_url. Reuses the
         # standard OAuth state plumbing so cleanup / TTL / replay-safety
-        # behave identically (single-use; `exchange_whatsapp` deletes
-        # the key after a successful exchange).
+        # behave identically.
         state = secrets.token_urlsafe(32)
         frappe.cache.set_value(
             f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
@@ -188,19 +178,29 @@ def start_whatsapp_embedded_signup(client_name: str, return_url: str = "") -> di
             expires_in_sec=OAUTH_STATE_TTL_SECONDS,
         )
 
-        # Use the site's configured host_name directly — `frappe.utils.get_url()`
-        # appends the bench's webserver port (8001) in developer_mode even when
-        # host_name is a tunneled HTTPS URL, which breaks the Embedded Signup
-        # callback (Facebook rejects `:8001` on the ngrok hostname). Fall back
-        # to get_url only when host_name isn't set (running on an actual prod
-        # domain via reverse-proxy, where port wrangling isn't needed).
-        provider_base = (
-            (frappe.local.conf.host_name or frappe.local.conf.hostname or "").rstrip("/")
-            or frappe.utils.get_url().rstrip("/")
-        )
-        auth_url = (
-            f"{provider_base}/connect?state={state}&launch=whatsapp"
-        )
+        redirect_uri = app.get("redirect_uri")
+        if not redirect_uri:
+            social_redirect = frappe.db.get_value("MSuite App", {"platform": "Meta Social", "is_active": 1}, "redirect_uri")
+            if social_redirect:
+                redirect_uri = social_redirect
+            else:
+                provider_base = (
+                    (frappe.local.conf.host_name or frappe.local.conf.hostname or "").rstrip("/")
+                    or frappe.utils.get_url().rstrip("/")
+                )
+                redirect_uri = f"{provider_base}/api/method/msuite.api.v1.auth.auth_callback"
+
+        from urllib.parse import urlencode
+        from msuite.constants import GRAPH_API_VERSION
+
+        params = {
+            "client_id": app["app_id"],
+            "redirect_uri": redirect_uri,
+            "state": state,
+            "response_type": "code",
+            "config_id": app["config_id"],
+        }
+        auth_url = f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?{urlencode(params)}"
         return success_response({"auth_url": auth_url, "state": state})
 
     except frappe.AuthenticationError as e:
@@ -247,6 +247,72 @@ def auth_callback(**kwargs) -> None:
         return
 
     try:
+        # Check if the cached state is for WhatsApp Embedded Signup
+        cached = frappe.cache.get_value(f"{OAUTH_STATE_CACHE_PREFIX}:{state}")
+        if cached:
+            try:
+                state_data = json.loads(cached)
+            except (TypeError, ValueError):
+                state_data = {}
+
+            if state_data.get("platform") == _WHATSAPP_STATE_PLATFORM:
+                client_name = state_data.get("client_name")
+                client_env = _capture_client_env()
+                client_env["initiated_from"] = state_data.get("initiated_from", "client")
+
+                # Burn state to prevent replay
+                frappe.cache.delete_value(f"{OAUTH_STATE_CACHE_PREFIX}:{state}")
+
+                if not client_name:
+                    _respond_popup(
+                        "Authorization Failed",
+                        "Missing client identifier in signup session.",
+                        "red",
+                        {"type": "msuite_auth_error", "error": "missing_client"},
+                    )
+                    return
+
+                app = frappe.db.get_value(
+                    "MSuite App",
+                    {"platform": "Meta WhatsApp", "is_active": 1},
+                    ["redirect_uri"],
+                    as_dict=True,
+                ) or {}
+                redirect_uri = app.get("redirect_uri")
+                if not redirect_uri:
+                    social_redirect = frappe.db.get_value("MSuite App", {"platform": "Meta Social", "is_active": 1}, "redirect_uri")
+                    if social_redirect:
+                        redirect_uri = social_redirect
+                    else:
+                        provider_base = (
+                            (frappe.local.conf.host_name or frappe.local.conf.hostname or "").rstrip("/")
+                            or frappe.utils.get_url().rstrip("/")
+                        )
+                        redirect_uri = f"{provider_base}/api/method/msuite.api.v1.auth.auth_callback"
+
+                from msuite.services.oauth import exchange_whatsapp_code
+                result = exchange_whatsapp_code(
+                    client_name=client_name,
+                    code=code,
+                    session_info=None,
+                    client_env=client_env,
+                    redirect_uri=redirect_uri,
+                )
+
+                waba_count = result.get("waba_count", 0)
+                _respond_popup(
+                    "Connected Successfully",
+                    f"Connected {waba_count} WhatsApp Business Account(s).",
+                    "green",
+                    {
+                        "type": "msuite_connected",
+                        "platform": "whatsapp",
+                        "count": waba_count,
+                        "accounts_saved": waba_count,
+                    },
+                )
+                return
+
         from msuite.services.oauth import process_oauth_callback
         result = process_oauth_callback(code, state)
 
@@ -673,8 +739,8 @@ def _list_connected_accounts(client_name: str) -> list[dict]:
         "MSuite Connected Account",
         filters={"client": client_name},
         fields=[
-            "name", "platform", "account_name", "account_id",
-            "status", "business_name", "connected_at",
+            "name", "platform", "display_name as account_name", "account_id",
+            "status", "auth_account.account_name as business_name", "connected_at",
         ],
         order_by="platform asc, connected_at desc",
     )
@@ -700,7 +766,7 @@ def _respond_popup(title: str, message: str, indicator: str, post_data: dict):
             if (window.opener) {{
                 window.opener.postMessage({post_json}, '*');
             }}
-            setTimeout(function() {{ window.close(); }}, 2000);
+            setTimeout(function() {{ window.close(); }}, 10000);
         </script>""",
         indicator_color=indicator,
     )

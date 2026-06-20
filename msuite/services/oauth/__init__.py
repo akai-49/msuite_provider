@@ -196,6 +196,7 @@ def exchange_whatsapp_code(
     code: str,
     session_info: dict | None = None,
     client_env: dict | None = None,
+    redirect_uri: str | None = None,
 ) -> dict:
     """
     WhatsApp Embedded Signup code exchange.
@@ -208,6 +209,7 @@ def exchange_whatsapp_code(
         code: Authorization code from FB.login()
         session_info: Optional waba_id + phone_number_id from sessionInfoListener
         client_env: Optional dict with ip_address, user_agent, browser, etc.
+        redirect_uri: Optional redirect URI used in manual OAuth redirect flow.
 
     Returns:
         {"waba_count": N, "phone_count": N}
@@ -216,7 +218,13 @@ def exchange_whatsapp_code(
     if client_doc.status != "Active":
         frappe.throw("Client must be active", OAuthError)
 
-    return meta_whatsapp.exchange_code(client_name, code, session_info, client_env)
+    return meta_whatsapp.exchange_code(
+        client_name=client_name,
+        code=code,
+        session_info=session_info,
+        client_env=client_env,
+        redirect_uri=redirect_uri,
+    )
 
 
 def refresh_expiring_tokens() -> dict:

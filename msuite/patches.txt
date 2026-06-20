@@ -1,1 +1,6 @@
 msuite.patches.v1_0.reseed_social_post_product
+msuite.patches.v1_0.reseed_ads_product
+msuite.patches.v1_0.reseed_inbox_product
+msuite.patches.v1_0.reseed_email_product
+msuite.patches.v1_0.reseed_whatsapp_product
+msuite.patches.v1_0.reseed_inbox_product_v2

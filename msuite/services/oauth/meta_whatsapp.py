@@ -38,6 +38,7 @@ def exchange_code(
     code: str,
     session_info: dict | None = None,
     client_env: dict | None = None,
+    redirect_uri: str | None = None,
 ) -> dict:
     """
     Exchange WhatsApp Embedded Signup authorization code.
@@ -47,6 +48,7 @@ def exchange_code(
         code: Authorization code from FB.login()
         session_info: Optional waba_id + phone_number_id from sessionInfoListener (v2)
         client_env: Optional dict with ip_address, user_agent, browser, platform_os, accept_language
+        redirect_uri: Optional redirect URI used in manual OAuth redirect flow.
 
     Returns:
         {"waba_count": N, "phone_count": N}
@@ -56,9 +58,13 @@ def exchange_code(
     app_secret = app.get_password("app_secret")
 
     # Step 1: Exchange code for system user access token
+    params = {"client_id": app_id, "client_secret": app_secret, "code": code}
+    if redirect_uri:
+        params["redirect_uri"] = redirect_uri
+
     resp = requests.get(
         f"{GRAPH_API_BASE}/oauth/access_token",
-        params={"client_id": app_id, "client_secret": app_secret, "code": code},
+        params=params,
         timeout=30,
     )
     token_data = resp.json()

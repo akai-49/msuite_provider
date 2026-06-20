@@ -1,17 +1,44 @@
 __pycache__/
 *.py[cod]
+*.py~
+*.pyc
 *.so
 *.egg-info/
 dist/
 *.egg
 .DS_Store
+*.DS_Store
 node_modules/
 
 # Local dev / backup artefacts — never push these.
 Archive/
 Archive.zip
+*.zip
 _bkup-*/
 *.bkup
 *.bak
 .idea/
 .vscode/
+
+# Test results, coverage, and caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
+.test_run_id
+test-results/
+.vitest/
+cypress/screenshots/
+cypress/videos/
+
+# Temporary scratch/test/debug scripts
+test_*.py
+debug_*.py
+scratch_*.py
+tmp_*.py
+
+# graphify
+graphify-out/
+.agents/
