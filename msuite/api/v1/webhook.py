@@ -116,7 +116,7 @@ def _dispatch_entry(page_id: str, entry: dict, object_type: str) -> None:
             "entry": [{"id": page_id, "time": entry.get("time"),
                        "changes": [change]}],
         }
-        _forward_by_page(page_id, endpoint, forward_payload)
+        _forward_by_page(page_id, endpoint, forward_payload, object_type)
 
 
 def _dispatch_dm(page_id: str, entry: dict, object_type: str) -> None:
@@ -150,10 +150,12 @@ def _dispatch_dm(page_id: str, entry: dict, object_type: str) -> None:
         "entry": [{"id": page_id, "time": entry.get("time"),
                    "messaging": entry.get("messaging") or []}],
     }
-    _post_to_client(
-        client_doc,
-        "msuite_workspace.inbox.api.v1.webhook.receive_meta_dm",
-        forward_payload,
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint="msuite_workspace.inbox.api.v1.webhook.receive_meta_dm",
+        payload=forward_payload,
     )
 
 
@@ -174,20 +176,21 @@ def _endpoint_for_field(field: str) -> str | None:
     return _FIELD_TO_ENDPOINT.get(field)
 
 
-def _forward_by_page(page_id: str, endpoint: str, payload: dict) -> None:
-    """Look up the Client that owns this Page and forward the payload.
+def _forward_by_page(page_id: str, endpoint: str, payload: dict, object_type: str = "page") -> None:
+    """Look up the Client that owns this Page/Instagram account and forward the payload.
 
-    page_id → MSuite Connected Account (Facebook) → MSuite Client.
+    page_id → MSuite Connected Account (Facebook/Instagram) → MSuite Client.
     """
+    platform = "Instagram" if object_type == "instagram" else "Facebook"
     connected = frappe.db.get_value(
         "MSuite Connected Account",
-        {"account_id": page_id, "platform": "Facebook", "status": "Active"},
+        {"account_id": page_id, "platform": platform, "status": "Active"},
         ["client", "name"],
         as_dict=True,
     )
     if not connected:
         logger.info(
-            f"Webhook for unknown page_id={page_id} — no active Connected Account; skipping."
+            f"Webhook for unknown page_id={page_id} ({platform}) — no active Connected Account; skipping."
         )
         return
 
@@ -195,7 +198,13 @@ def _forward_by_page(page_id: str, endpoint: str, payload: dict) -> None:
     if client_doc.status != "Active":
         logger.info(f"Client {connected.client} inactive; skipping forward.")
         return
-    _post_to_client(client_doc, endpoint, payload)
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint=endpoint,
+        payload=payload,
+    )
 
 
 # ======================================================================
@@ -354,10 +363,12 @@ def _forward_to_client(waba_id: str, payload: dict):
         )
         return
 
-    _post_to_client(
-        client_doc,
-        "msuite_workspace.api.v1.whatsapp.webhook.webhook",
-        payload,
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint="msuite_workspace.api.v1.whatsapp.webhook.webhook",
+        payload=payload,
     )
 
 
@@ -399,6 +410,16 @@ def _post_to_client(client_doc, endpoint: str, payload: dict) -> None:
         # about (failures + drops).
     except Exception as e:
         logger.error(f"Failed to forward to {client_doc.name} {endpoint}: {e}")
+
+
+def forward_webhook_job(client_name: str, endpoint: str, payload: dict) -> None:
+    """Enqueued background job to forward a webhook payload to the client.
+
+    By running this in the background, the webhook handler returns 200 OK
+    immediately to Meta, preventing timeout retries.
+    """
+    client_doc = frappe.get_doc("MSuite Client", client_name)
+    _post_to_client(client_doc, endpoint, payload)
 
 
 def _validate_meta_signature(platform: str) -> bool:

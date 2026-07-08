@@ -9,6 +9,7 @@
         "credentials_section", "app_id", "app_secret",
         "whatsapp_section", "config_id", "allow_coexistence",
         "oauth_section", "redirect_uri",
+        "ai_calling_section", "ai_backend_url",
         "webhook_section", "webhook_verify_token", "webhook_url",
         "deauthorize_section", "deauthorize_callback_url"
     ],
@@ -31,7 +32,7 @@
             "fieldname": "platform",
             "fieldtype": "Select",
             "label": "Platform",
-            "options": "Meta WhatsApp\nMeta Social\nGoogle\nTikTok\nLinkedIn\nTwitter",
+            "options": "Meta WhatsApp\nMeta Social\nGoogle\nTikTok\nLinkedIn\nTwitter\nAI Calling",
             "reqd": 1,
             "in_list_view": 1
         },
@@ -45,20 +46,21 @@
         {
             "fieldname": "credentials_section",
             "fieldtype": "Section Break",
-            "label": "Credentials"
+            "label": "Credentials",
+            "depends_on": "eval:doc.platform!='AI Calling'"
         },
         {
             "fieldname": "app_id",
             "fieldtype": "Data",
             "label": "App ID",
-            "reqd": 1,
+            "mandatory_depends_on": "eval:doc.platform!='AI Calling'",
             "description": "Platform App/Client ID"
         },
         {
             "fieldname": "app_secret",
             "fieldtype": "Password",
             "label": "App Secret",
-            "reqd": 1,
+            "mandatory_depends_on": "eval:doc.platform!='AI Calling'",
             "description": "Encrypted. Never shared with client instances."
         },
         {
@@ -94,9 +96,23 @@
             "description": "Redirect URI registered with the platform"
         },
         {
+            "fieldname": "ai_calling_section",
+            "fieldtype": "Section Break",
+            "label": "AI Calling Backend",
+            "depends_on": "eval:doc.platform=='AI Calling'"
+        },
+        {
+            "fieldname": "ai_backend_url",
+            "fieldtype": "Data",
+            "label": "AI Backend URL",
+            "mandatory_depends_on": "eval:doc.platform=='AI Calling'",
+            "description": "Base URL of the single shared AWS FastAPI AI Calling backend used by every client (e.g. https://ai-calling.example.com). Universal — every Active MSuite Client receives this same value when pushed."
+        },
+        {
             "fieldname": "webhook_section",
             "fieldtype": "Section Break",
-            "label": "Webhook"
+            "label": "Webhook",
+            "depends_on": "eval:doc.platform!='AI Calling'"
         },
         {
             "fieldname": "webhook_verify_token",
@@ -114,6 +130,7 @@
             "fieldname": "deauthorize_section",
             "fieldtype": "Section Break",
             "label": "Deauthorize Callback",
+            "depends_on": "eval:doc.platform!='AI Calling'",
             "description": "Set this URL in Meta App Dashboard → Settings → Advanced → Deauthorize Callback URL"
         },
         {

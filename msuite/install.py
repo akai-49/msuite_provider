@@ -22,6 +22,7 @@ from msuite.seeds.ads import ADS_PRODUCT, ADS_PLANS_FOR_INSTALL
 from msuite.seeds.email import EMAIL_PRODUCT, EMAIL_PLANS_FOR_INSTALL
 from msuite.seeds.inbox import INBOX_PRODUCT, INBOX_PLANS_FOR_INSTALL
 from msuite.seeds.whatsapp import WA_PRODUCT, WA_PLANS_FOR_INSTALL
+from msuite.seeds.ai_calling import AI_CALLING_PRODUCT, AI_CALLING_PLANS_FOR_INSTALL
 
 
 def after_install():
@@ -90,7 +91,7 @@ def _create_item_groups():
         doc.flags.ignore_mandatory = True
         doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
 
-    groups = ["WhatsApp", "Email", "Social Post", "Ads", "Inbox", "Bundles"]
+    groups = ["WhatsApp", "Email", "Social Post", "Ads", "Inbox", "AI Calling", "Bundles"]
     for group_name in groups:
         if not frappe.db.exists("Item Group", group_name):
             doc = frappe.new_doc("Item Group")
@@ -186,6 +187,7 @@ def _seed_products():
         "SOCIAL": SOCIAL_PRODUCT,
         "ADS": ADS_PRODUCT,
         "INBOX": INBOX_PRODUCT,
+        "AICALLING": AI_CALLING_PRODUCT,
     }
 
     for code, data in products.items():
@@ -256,8 +258,11 @@ def _seed_plans():
     # ---- Inbox Plans (sourced from msuite/seeds/inbox.py) ----
     inbox_plans = INBOX_PLANS_FOR_INSTALL
 
-    product_map = {"WA": "WhatsApp", "EMAIL": "Email", "SOCIAL": "Social Post", "ADS": "Ads", "INBOX": "Inbox"}
-    all_plans = wa_plans + email_plans + social_plans + ads_plans + inbox_plans
+    # ---- AI Calling Plans (sourced from msuite/seeds/ai_calling.py) ----
+    ai_calling_plans = AI_CALLING_PLANS_FOR_INSTALL
+
+    product_map = {"WA": "WhatsApp", "EMAIL": "Email", "SOCIAL": "Social Post", "ADS": "Ads", "INBOX": "Inbox", "AICALLING": "AI Calling"}
+    all_plans = wa_plans + email_plans + social_plans + ads_plans + inbox_plans + ai_calling_plans
 
     for plan_data in all_plans:
         plan_code = plan_data["plan_code"]
