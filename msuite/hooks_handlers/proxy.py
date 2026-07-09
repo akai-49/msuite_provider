@@ -25,11 +25,15 @@ def before_request():
     # Check if request comes from python-httpx (the AI calling backend)
     user_agent = request.headers.get("User-Agent") or ""
     
-    # We also check path for lead_management just in case the User-Agent was overridden/missing
-    is_lead_mgmt = request.path.startswith("/api/method/lead_management.")
+    # We also check path for ai_calling / lead_management just in case the User-Agent was overridden/missing
+    is_ai_calling = (
+        request.path.startswith("/api/method/ai_calling.")
+        or request.path.startswith("/api/method/lead_management.")
+        or request.path.startswith("/api/method/msuite_workspace.")
+    )
     is_httpx = ("httpx" in user_agent.lower() or "python-httpx" in user_agent.lower()) and not request.path.startswith("/api/method/login")
 
-    if is_lead_mgmt or is_httpx:
+    if is_ai_calling or is_httpx:
         # Check if the active client has a registered client_url in MSuite Client
         client_name = frappe.db.get_value("MSuite Client", {"status": "Active"}, "name")
         api_key = ""

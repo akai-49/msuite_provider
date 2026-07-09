@@ -261,7 +261,7 @@ def register_did(client_identifier: str, did: str, organization: str = None) -> 
 # the backend can echo it on follow-up callbacks (recording upload,
 # campaign lead updates) for exact routing.
 
-_CLIENT_APP_PREFIX = "lead_management.lead_management"
+_CLIENT_APP_PREFIX = "ai_calling.ai_calling"
 _CALL_ROUTE_CACHE_TTL = 14 * 24 * 3600  # call_id → client, survives late recording uploads
 
 
@@ -457,7 +457,7 @@ def update_campaign_lead(**kwargs) -> dict:
         try:
             result = _forward_to_client(
                 client_doc,
-                f"{_CLIENT_APP_PREFIX}.doctype.voice_campaign.voice_campaign.update_campaign_lead",
+                f"{_CLIENT_APP_PREFIX}.doctype.voice_blast.voice_blast.update_campaign_lead",
                 kwargs,
             )
             if isinstance(result, dict) and result.get("success") is False:
