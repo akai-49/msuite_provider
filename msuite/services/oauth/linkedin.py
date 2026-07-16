@@ -119,6 +119,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
         "access_token": token,
         "refresh_token": refresh_token,
         "token_expires_at": str(add_to_date(now(), seconds=expires_in)),
+        "avatar_url": person_picture,
     })
     connected.append({"platform": "LinkedIn", "name": person_name})
 
@@ -130,6 +131,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
 
         org_info = _get_org_info(token, org_id)
         org_name = org_info.get("localizedName", f"Org {org_id}")
+        org_logo = _extract_org_logo_url(org_info)
 
         ca_org = upsert_connected_account(client_name, Platform.LINKEDIN, f"org:{org_id}", {
             "display_name": org_name,
@@ -146,6 +148,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
             "access_token": token,
             "refresh_token": refresh_token,
             "token_expires_at": str(add_to_date(now(), seconds=expires_in)),
+            "avatar_url": org_logo,
         })
         connected.append({"platform": "LinkedIn", "name": org_name})
 
@@ -212,6 +215,7 @@ def _get_org_info(token: str, org_id: str) -> dict:
     try:
         resp = requests.get(
             f"{LI_API}/v2/organizations/{org_id}",
+            params={"projection": "(localizedName,vanityName,logoV2(original~:playableStreams))"},
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
         )
@@ -219,3 +223,20 @@ def _get_org_info(token: str, org_id: str) -> dict:
     except Exception as e:
         logger.error(f"LinkedIn org info failed for {org_id}: {e}")
         return {}
+
+
+def _extract_org_logo_url(org_info: dict) -> str:
+    """Pull the largest playable-stream URL out of a projected logoV2.
+
+    Shape: logoV2 → original~ → elements[] → identifiers[] → identifier.
+    Any missing level (org without a logo, projection unsupported for
+    this token's scopes) just means no avatar — never an error.
+    """
+    try:
+        elements = (org_info.get("logoV2", {}) or {}).get("original~", {}).get("elements", [])
+        if not elements:
+            return ""
+        identifiers = elements[-1].get("identifiers", [])
+        return identifiers[0].get("identifier", "") if identifiers else ""
+    except Exception:
+        return ""

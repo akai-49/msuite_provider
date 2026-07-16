@@ -770,3 +770,36 @@ def _respond_popup(title: str, message: str, indicator: str, post_data: dict):
         </script>""",
         indicator_color=indicator,
     )
+
+
+@frappe.whitelist(allow_guest=True)
+def get_app_id_for_client(client_name: str, platform: str) -> dict:
+    """
+    Retrieve active App ID for a platform.
+    """
+    try:
+        require_msuite_client_auth(client_name)
+
+        platform_map = {
+            "meta_social": "Meta Social",
+            "meta_ads": "Meta Social",
+            "whatsapp": "Meta WhatsApp",
+            "meta_whatsapp": "Meta WhatsApp",
+        }
+        platform_name = platform_map.get(platform, platform)
+
+        app_id = frappe.db.get_value(
+            "MSuite App",
+            {"platform": platform_name, "is_active": 1},
+            "app_id"
+        )
+        if not app_id:
+            return error_response(
+                ErrorCode.INVALID_INPUT,
+                f"No active MSuite App configured for platform: {platform_name}."
+            )
+
+        return success_response({"app_id": app_id})
+    except Exception as e:
+        return error_response(ErrorCode.INVALID_INPUT, str(e))
+

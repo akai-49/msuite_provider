@@ -460,9 +460,74 @@ def _validate_meta_signature(platform: str) -> bool:
         frappe.log_error(
             title="Webhook Signature Mismatch",
             message=f"Platform: {platform}\n"
-                    f"Expected: {expected[:20]}...\n"
-                    f"Received: {signature_header[:20]}...\n"
-                    f"Body length: {len(raw_body)}\n"
-                    f"App: {app_name}",
+            f"Expected: {expected[:20]}...\n"
+            f"Received: {signature_header[:20]}...\n"
+            f"Body length: {len(raw_body)}\n"
+            f"App: {app_name}",
         )
     return match
+
+
+@frappe.whitelist(allow_guest=True)
+def receive_gmail_push(**kwargs):
+    """
+    Google Pub/Sub push notification endpoint.
+    GET: (Optional verification or basic request)
+    POST: Real-time event containing base64 JSON payload.
+    """
+    if frappe.request.method == "GET":
+        return {"status": "ok"}
+
+    payload = frappe.request.get_json(silent=True) or {}
+    message = payload.get("message", {})
+    data_b64 = message.get("data")
+
+    if not data_b64:
+        logger.warning("Gmail push received but missing data key")
+        return {"status": "ignored"}
+
+    try:
+        # Base64url decode Pub/Sub data
+        import base64
+        decoded_bytes = base64.urlsafe_b64decode(str(data_b64) + "===")
+        data_json = json.loads(decoded_bytes.decode("utf-8"))
+    except Exception as e:
+        logger.error(f"Gmail push payload decode failed: {e}")
+        return {"status": "error", "message": "Failed to decode base64 data"}
+
+    email_address = data_json.get("emailAddress")
+    history_id = data_json.get("historyId")
+
+    if not email_address:
+        logger.warning("Gmail push decoded data missing emailAddress")
+        return {"status": "ignored"}
+
+    # Find the active MSuite Connected Account matching this Gmail address
+    connected = frappe.db.get_value(
+        "MSuite Connected Account",
+        {"account_id": email_address, "platform": "Gmail", "status": "Active"},
+        ["client", "name"],
+        as_dict=True,
+    )
+    if not connected:
+        logger.info(f"Gmail push webhook for unknown email={email_address} — dropping")
+        return {"status": "ignored"}
+
+    client_doc = frappe.get_doc("MSuite Client", connected.client)
+    if client_doc.status != "Active":
+        return {"status": "ignored"}
+
+    # Forward the incoming push event to the client's inbox ingestion endpoint
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint="msuite_workspace.inbox.api.v1.email_ingest.receive_inbound_push",
+        payload={
+            "gmail_address": email_address,
+            "history_id": history_id,
+        },
+    )
+
+    return {"status": "ok"}
+

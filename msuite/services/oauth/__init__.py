@@ -57,6 +57,8 @@ _AUTH_URL_BUILDERS = {
     "linkedin":    linkedin.build_auth_url,
     "twitter":     twitter.build_auth_url,
     "google":      google.build_auth_url,
+    "google_youtube": google.build_auth_url,
+    "google_gmail": google.build_auth_url,
 }
 
 _TOKEN_EXCHANGERS = {
@@ -66,6 +68,8 @@ _TOKEN_EXCHANGERS = {
     "linkedin":    linkedin.exchange_token,
     "twitter":     twitter.exchange_token,
     "google":      google.exchange_token,
+    "google_youtube": google.exchange_token,
+    "google_gmail": google.exchange_token,
 }
 
 _ACCOUNT_DISCOVERERS = {
@@ -75,6 +79,8 @@ _ACCOUNT_DISCOVERERS = {
     "linkedin":    linkedin.discover_accounts,
     "twitter":     twitter.discover_accounts,
     "google":      google.discover_accounts,
+    "google_youtube": google.discover_accounts,
+    "google_gmail": google.discover_accounts,
 }
 
 _TOKEN_REFRESHERS = {
@@ -91,6 +97,7 @@ _TOKEN_REFRESHERS = {
     "Twitter":   twitter.refresh_token_fn,
     "YouTube":   google.refresh_token_fn,
     "Google Ads": google.refresh_token_fn,
+    "Gmail":      google.refresh_token_fn,
     # WhatsApp uses System User tokens — perpetual; no refresh needed.
     # TikTok refresher pending TikTok publisher landing on the provider.
 }

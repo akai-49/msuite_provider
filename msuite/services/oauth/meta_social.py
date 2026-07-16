@@ -178,8 +178,11 @@ def _discover_pages_and_instagram(
             page_id    = page["id"]
             page_name  = page.get("name", "")
             page_token = page.get("access_token", "")
-            picture_data = page.get("picture", {}).get("data", {})
-            avatar_url = picture_data.get("url") or ""
+            # Prefer the stable public redirect over the signed CDN URL
+            # in `picture.data.url` — the signed URL expires after a few
+            # days, leaving broken avatars on the client. The redirect
+            # endpoint is public for Pages and never expires.
+            avatar_url = f"https://graph.facebook.com/{page_id}/picture?type=large"
 
             biz_info     = page_biz_map.get(page_name, {})
             biz_id       = biz_info.get("business_id", "")

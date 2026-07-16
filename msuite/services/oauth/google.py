@@ -1,5 +1,5 @@
 """
-Google OAuth handler — for YouTube (and future Google Ads).
+Google OAuth handler — for YouTube (and future Google Ads), and Gmail.
 
 Auth flow: standard OAuth 2.0 Authorization Code.
 Auth URL: https://accounts.google.com/o/oauth2/v2/auth
@@ -13,8 +13,15 @@ Scopes for YouTube:
   https://www.googleapis.com/auth/youtube.readonly   — read channel info + analytics
   https://www.googleapis.com/auth/userinfo.profile   — user name/picture
 
-Discovery: /youtube/v3/channels?mine=true → channel_id, title, handle
+Scopes for Gmail:
+  https://www.googleapis.com/auth/gmail.modify       — read + mark read
+  https://www.googleapis.com/auth/gmail.send         — send emails
+
+Discovery:
+  YouTube: /youtube/v3/channels?mine=true → channel_id, title, handle
+  Gmail:   /oauth2/v2/userinfo → gmail_address (same call as YouTube)
 """
+import json
 import frappe
 import requests
 from frappe.utils import now, add_to_date
@@ -37,23 +44,52 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 YT_API = "https://www.googleapis.com/youtube/v3"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-GOOGLE_SCOPES = [
+# YouTube-only scopes
+YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+]
+
+# Gmail-only scopes
+GMAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
+]
+
+# Always included — shared identity scopes
+IDENTITY_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/userinfo.email",
 ]
+
+# Full scope list requested at consent — user can grant/deny YouTube and Gmail independently
+GOOGLE_SCOPES = YOUTUBE_SCOPES + GMAIL_SCOPES + IDENTITY_SCOPES
 
 ACCESS_TOKEN_LIFETIME = 3600  # 1 hour
 
 
 def build_auth_url(client_name: str, state: str) -> str:
     app = get_msuite_app("Google")
+    
+    # Extract platform from state to selectively request scopes
+    from msuite.constants import OAUTH_STATE_CACHE_PREFIX
+    cached = frappe.cache.get_value(f"{OAUTH_STATE_CACHE_PREFIX}:{state}")
+    platform = "google"
+    if cached:
+        platform = json.loads(cached).get("platform") or "google"
+
+    if platform == "google_gmail":
+        scopes = GMAIL_SCOPES + IDENTITY_SCOPES
+    elif platform == "google_youtube":
+        scopes = YOUTUBE_SCOPES + IDENTITY_SCOPES
+    else:
+        scopes = GOOGLE_SCOPES
+
     params = {
         "response_type": "code",
         "client_id": app.app_id,
         "redirect_uri": app.redirect_uri,
-        "scope": " ".join(GOOGLE_SCOPES),
+        "scope": " ".join(scopes),
         "state": state,
         "access_type": "offline",
         "prompt": "consent",
@@ -84,6 +120,7 @@ def exchange_token(code: str, state_data: dict) -> dict:
         "refresh_token": data.get("refresh_token", ""),
         "expires_in": data.get("expires_in", ACCESS_TOKEN_LIFETIME),
         "app_name": app.name,
+        "platform": state_data.get("platform", "google"),
     }
 
 
@@ -92,6 +129,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     expires_in = token_data.get("expires_in", ACCESS_TOKEN_LIFETIME)
     app_name = token_data.get("app_name", "")
     refresh_token = token_data.get("refresh_token", "")
+    platform = token_data.get("platform", "google")
     connected = []
 
     user_info = _get_user_info(token)
@@ -107,35 +145,67 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     else:
         auth_name = None
 
-    channels = _get_youtube_channels(token)
-    for ch in channels:
-        channel_id = ch.get("id", "")
-        snippet = ch.get("snippet", {})
-        channel_title = snippet.get("title", "")
-        channel_handle = snippet.get("customUrl", "")
+    # ── YouTube channel discovery ────────────────────────────────────────
+    if platform in ["google", "google_youtube"]:
+        try:
+            channels = _get_youtube_channels(token)
+            for ch in channels:
+                channel_id = ch.get("id", "")
+                snippet = ch.get("snippet", {})
+                channel_title = snippet.get("title", "")
+                channel_handle = snippet.get("customUrl", "")
+                channel_avatar = ((snippet.get("thumbnails") or {}).get("default") or {}).get("url", "")
 
-        upsert_connected_account(client_name, Platform.YOUTUBE, channel_id, {
-            "display_name": channel_title,
+                upsert_connected_account(client_name, Platform.YOUTUBE, channel_id, {
+                    "display_name": channel_title,
+                    "auth_account": auth_name,
+                    "access_token": token,
+                    "token_type": "User Token",
+                    "msuite_app": app_name,
+                    "token_expiry": add_to_date(now(), seconds=expires_in),
+                })
+
+                push_account_to_client(client_name, Platform.YOUTUBE, {
+                    "channel_id": channel_id,
+                    "channel_title": channel_title,
+                    "channel_handle": channel_handle,
+                    "access_token": token,
+                    "refresh_token": refresh_token,
+                    "token_expires_at": str(add_to_date(now(), seconds=expires_in)),
+                    "google_account_id": google_id,
+                    "google_account_name": google_name or google_email,
+                    "avatar_url": channel_avatar,
+                })
+                connected.append({"platform": "YouTube", "name": channel_title})
+        except Exception as e:
+            logger.warning(f"YouTube discovery failed or skipped: {e}")
+
+    # ── Gmail account discovery ──────────────────────────────────────────
+    if google_email and platform in ["google", "google_gmail"]:
+        upsert_connected_account(client_name, Platform.GMAIL, google_email, {
+            "display_name": google_name or google_email,
             "auth_account": auth_name,
             "access_token": token,
+            "refresh_token": refresh_token,   # stored encrypted on provider; NEVER pushed to client
             "token_type": "User Token",
             "msuite_app": app_name,
             "token_expiry": add_to_date(now(), seconds=expires_in),
         })
 
-        push_account_to_client(client_name, Platform.YOUTUBE, {
-            "channel_id": channel_id,
-            "channel_title": channel_title,
-            "channel_handle": channel_handle,
-            "access_token": token,
-            "refresh_token": refresh_token,
-            "token_expires_at": str(add_to_date(now(), seconds=expires_in)),
+        # Push stripped credentials to client — no refresh_token, no app_secret.
+        push_account_to_client(client_name, Platform.GMAIL, {
+            "gmail_address": google_email,
             "google_account_id": google_id,
             "google_account_name": google_name or google_email,
+            "access_token": token,
+            "token_expires_at": str(add_to_date(now(), seconds=expires_in)),
+            "avatar_url": user_info.get("picture", ""),
+            # refresh_token intentionally omitted — provider holds it
         })
-        connected.append({"platform": "YouTube", "name": channel_title})
+        connected.append({"platform": "Gmail", "name": google_email})
 
     return connected
+
 
 
 def refresh_token_fn(connected_account_name: str) -> None:
