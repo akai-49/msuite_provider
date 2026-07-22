@@ -59,6 +59,7 @@ _AUTH_URL_BUILDERS = {
     "google":      google.build_auth_url,
     "google_youtube": google.build_auth_url,
     "google_gmail": google.build_auth_url,
+    "google_ads":   google.build_auth_url,
 }
 
 _TOKEN_EXCHANGERS = {
@@ -70,6 +71,7 @@ _TOKEN_EXCHANGERS = {
     "google":      google.exchange_token,
     "google_youtube": google.exchange_token,
     "google_gmail": google.exchange_token,
+    "google_ads":   google.exchange_token,
 }
 
 _ACCOUNT_DISCOVERERS = {
@@ -81,6 +83,7 @@ _ACCOUNT_DISCOVERERS = {
     "google":      google.discover_accounts,
     "google_youtube": google.discover_accounts,
     "google_gmail": google.discover_accounts,
+    "google_ads":   google.discover_accounts,
 }
 
 _TOKEN_REFRESHERS = {

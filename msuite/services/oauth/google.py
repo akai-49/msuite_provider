@@ -61,6 +61,11 @@ GMAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
 ]
 
+# Google Ads-only scopes
+GOOGLE_ADS_SCOPES = [
+    "https://www.googleapis.com/auth/adwords",
+]
+
 # Always included — shared identity scopes
 IDENTITY_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.profile",
@@ -68,7 +73,7 @@ IDENTITY_SCOPES = [
 ]
 
 # Full scope list requested at consent — user can grant/deny YouTube and Gmail independently
-GOOGLE_SCOPES = YOUTUBE_SCOPES + GMAIL_SCOPES + IDENTITY_SCOPES
+GOOGLE_SCOPES = YOUTUBE_SCOPES + GMAIL_SCOPES + GOOGLE_ADS_SCOPES + IDENTITY_SCOPES
 
 ACCESS_TOKEN_LIFETIME = 3600  # 1 hour
 
@@ -87,6 +92,8 @@ def build_auth_url(client_name: str, state: str) -> str:
         scopes = GMAIL_SCOPES + IDENTITY_SCOPES
     elif platform == "google_youtube":
         scopes = YOUTUBE_SCOPES + IDENTITY_SCOPES
+    elif platform == "google_ads":
+        scopes = GOOGLE_ADS_SCOPES + IDENTITY_SCOPES
     else:
         scopes = GOOGLE_SCOPES
 
@@ -224,7 +231,148 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
         except Exception as e:
             logger.warning(f"Gmail watch registration skipped for {google_email}: {e}")
 
+    # ── Google Ads account discovery ────────────────────────────────────
+    if platform in ["google", "google_ads"]:
+        try:
+            ads_customers = _get_google_ads_customers(token)
+            for cust in ads_customers:
+                cid = cust["account_id"]
+                cname = cust["account_name"]
+
+                upsert_connected_account(client_name, "Google Ads", cid, {
+                    "display_name": cname,
+                    "auth_account": auth_name,
+                    "access_token": token,
+                    "refresh_token": refresh_token,
+                    "token_type": "User Token",
+                    "msuite_app": app_name,
+                    "token_expiry": add_to_date(now(), seconds=expires_in),
+                })
+
+                push_account_to_client(client_name, "Google Ads", {
+                    "ad_account_id": cid,
+                    "ad_account_name": cname,
+                    "access_token": token,
+                    "token_expires_at": str(add_to_date(now(), seconds=expires_in)),
+                    "google_account_id": google_id,
+                    "google_account_name": google_name or google_email,
+                })
+                connected.append({"platform": "Google Ads", "name": cname})
+        except Exception as e:
+            logger.warning(f"Google Ads discovery failed: {e}")
+
     return connected
+
+
+# Google Ads REST API version — update when Google releases a new stable version.
+# v17 was sunset (returns 404). v20+ returns proper JSON errors.
+GOOGLE_ADS_API_VERSION = "v20"
+
+
+def _get_google_ads_customers(token: str) -> list[dict]:
+    """Discover all accessible Google Ads customer accounts.
+
+    Strategy:
+    1. Call listAccessibleCustomers → returns all accounts where the OAuth user
+       has DIRECT access (both standalone and manager/MCC accounts).
+    2. For each account ID discovered (plus any manually configured MCC IDs from
+       site_config), run a GAQL customer_client query to expand the full sub-account
+       hierarchy.
+    3. Deduplicate and return all leaf (non-manager) ad accounts found.
+    """
+    dev_token = (frappe.conf.get("google_ads_developer_token") or "").strip()
+    if not dev_token:
+        logger.warning("No google_ads_developer_token in site_config — skipping Google Ads customer discovery")
+        return []
+
+    base_url = f"https://googleads.googleapis.com/{GOOGLE_ADS_API_VERSION}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "developer-token": dev_token,
+        "Content-Type": "application/json",
+    }
+
+    # ── Step 1: Get directly accessible resource names ─────────────────────
+    accessible_ids: list[str] = []
+    try:
+        resp = requests.get(
+            f"{base_url}/customers:listAccessibleCustomers",
+            headers=headers,
+            timeout=30,
+        )
+        logger.info(f"Google Ads listAccessibleCustomers → status {resp.status_code}")
+        if resp.status_code == 200:
+            names = resp.json().get("resourceNames", [])
+            logger.info(f"Google Ads resourceNames: {names}")
+            accessible_ids = [r.replace("customers/", "").strip() for r in names if r]
+        else:
+            logger.error(f"Google Ads listAccessibleCustomers {resp.status_code}: {resp.text[:500]}")
+    except Exception as e:
+        logger.error(f"Google Ads listAccessibleCustomers failed: {e}")
+
+    # ── Step 2: Add manually configured MCC IDs from site_config ──────────
+    # Allows admin to seed discovery even if listAccessibleCustomers returns empty.
+    # In site_config.json: "google_ads_mcc_customer_id": "8425847703"
+    mcc_from_config = (frappe.conf.get("google_ads_mcc_customer_id") or "").strip()
+    if mcc_from_config:
+        cid_clean = mcc_from_config.replace("-", "").strip()
+        if cid_clean and cid_clean not in accessible_ids:
+            logger.info(f"Adding MCC customer ID from site_config: {cid_clean}")
+            accessible_ids.append(cid_clean)
+
+    if not accessible_ids:
+        logger.warning("Google Ads: no accessible customer IDs found. Ensure the Google account has direct access to at least one Ads account.")
+        return []
+
+    # ── Step 3: For each accessible account, expand hierarchy via GAQL ─────
+    all_customers: dict[str, dict] = {}
+    for seed_cid in accessible_ids:
+        # First record the seed account itself
+        if seed_cid not in all_customers:
+            all_customers[seed_cid] = {
+                "account_id": seed_cid,
+                "account_name": f"Google Ads ({seed_cid})",
+            }
+
+        # Query customer_client to get sub-accounts under this customer
+        try:
+            gaql = (
+                "SELECT customer_client.client_customer, customer_client.descriptive_name, "
+                "customer_client.manager, customer_client.status, customer_client.id "
+                "FROM customer_client "
+                "WHERE customer_client.status = 'ENABLED'"
+            )
+            search_url = f"{base_url}/customers/{seed_cid}/googleAds:search"
+            search_headers = {**headers, "login-customer-id": seed_cid}
+            sresp = requests.post(
+                search_url,
+                headers=search_headers,
+                json={"query": gaql},
+                timeout=30,
+            )
+            logger.info(f"Google Ads customer_client GAQL for {seed_cid} → status {sresp.status_code}")
+            if sresp.status_code == 200:
+                rows = sresp.json().get("results", [])
+                logger.info(f"Google Ads customer_client rows for {seed_cid}: {len(rows)}")
+                for row in rows:
+                    cc = row.get("customerClient", {})
+                    cid_str = str(cc.get("id", "")).strip()
+                    is_manager = cc.get("manager", False)
+                    desc_name = cc.get("descriptiveName", "") or f"Google Ads ({cid_str})"
+                    if cid_str and cid_str not in all_customers:
+                        all_customers[cid_str] = {
+                            "account_id": cid_str,
+                            "account_name": desc_name,
+                            "is_manager": is_manager,
+                        }
+            else:
+                logger.warning(f"Google Ads GAQL for {seed_cid}: {sresp.status_code}: {sresp.text[:300]}")
+        except Exception as e:
+            logger.warning(f"Google Ads customer_client expansion for {seed_cid} failed: {e}")
+
+    result = list(all_customers.values())
+    logger.info(f"Google Ads total discovered accounts: {len(result)} → {[c['account_id'] for c in result]}")
+    return result
 
 
 
