@@ -48,6 +48,11 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+    # comments.insert / setModerationStatus (inbox comment replies) and
+    # channel Analytics reports. Accounts connected before these were
+    # added must reconnect to grant them.
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
 
 # Gmail-only scopes
@@ -204,16 +209,39 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
         })
         connected.append({"platform": "Gmail", "name": google_email})
 
+        # Register the Gmail push watch so Pub/Sub notifications start
+        # flowing immediately (best-effort — polling still covers ingestion
+        # when no gmail_pubsub_topic is configured or the call fails).
+        try:
+            from msuite.api.v1.gmail_relay import register_gmail_watch
+            ca_name = frappe.db.get_value(
+                "MSuite Connected Account",
+                {"client": client_name, "platform": Platform.GMAIL, "account_id": google_email},
+                "name",
+            )
+            if ca_name:
+                register_gmail_watch(ca_name)
+        except Exception as e:
+            logger.warning(f"Gmail watch registration skipped for {google_email}: {e}")
+
     return connected
 
 
 
 def refresh_token_fn(connected_account_name: str) -> None:
-    """Refresh a Google access token using the refresh token."""
+    """Refresh a Google access token using the refresh token.
+
+    Raises on failure — callers depend on the exception:
+      * gmail_relay returns TOKEN_REFRESH_FAILED instead of calling the
+        Gmail API with a stale token;
+      * refresh_all_tokens records the failure (and eventually flags
+        needs_reauth + notifies the client) instead of counting a silent
+        no-op as a success.
+    """
     ca = frappe.get_doc("MSuite Connected Account", connected_account_name)
     stored_refresh = ca.get_password("refresh_token") if hasattr(ca, "refresh_token") and ca.refresh_token else ""
     if not stored_refresh:
-        return
+        raise RuntimeError(f"No refresh token stored for {connected_account_name} — reconnect required")
 
     app = get_msuite_app("Google")
     resp = requests.post(
@@ -229,7 +257,10 @@ def refresh_token_fn(connected_account_name: str) -> None:
     data = resp.json()
     if "access_token" not in data:
         logger.warning(f"Google token refresh failed for {connected_account_name}: {data}")
-        return
+        raise RuntimeError(
+            f"Google token refresh failed: {data.get('error', 'unknown')} "
+            f"{data.get('error_description', '')}".strip()
+        )
 
     ca.access_token = data["access_token"]
     ca.token_expiry = add_to_date(now(), seconds=data.get("expires_in", ACCESS_TOKEN_LIFETIME))

@@ -69,7 +69,9 @@ def send_email(**kwargs):
     ca = frappe.get_doc("MSuite Connected Account", ca_name)
 
     # 4. Check & refresh token if expired
-    if not ca.access_token or not ca.token_expiry or ca.token_expiry <= now_datetime():
+    # Refresh when missing or expiring within the next 60s — a token that
+    # expires mid-request fails the Gmail call anyway
+    if not ca.access_token or not ca.token_expiry or ca.token_expiry <= add_to_date(now_datetime(), seconds=60):
         try:
             refresh_token_fn(ca.name)
             ca = frappe.get_doc("MSuite Connected Account", ca_name) # reload
@@ -124,6 +126,13 @@ def send_email(**kwargs):
         attachments = data.get("attachments") or []
         if attachments:
             outer = MIMEMultipart("mixed")
+            # Move the top-level headers onto the new outermost message —
+            # otherwise the sent email has no Subject/From/To/threading
+            # headers at all (they'd be stuck on the inner alternative part).
+            for header in ("Subject", "From", "To", "Cc", "Bcc", "In-Reply-To", "References"):
+                if msg.get(header):
+                    outer[header] = msg[header]
+                    del msg[header]
             outer.attach(msg)
             for att in attachments:
                 filename = att.get("filename")
@@ -209,7 +218,9 @@ def poll_new_messages(**kwargs):
 
     ca = frappe.get_doc("MSuite Connected Account", ca_name)
 
-    if not ca.access_token or not ca.token_expiry or ca.token_expiry <= now_datetime():
+    # Refresh when missing or expiring within the next 60s — a token that
+    # expires mid-request fails the Gmail call anyway
+    if not ca.access_token or not ca.token_expiry or ca.token_expiry <= add_to_date(now_datetime(), seconds=60):
         try:
             refresh_token_fn(ca.name)
             ca = frappe.get_doc("MSuite Connected Account", ca_name)
@@ -278,6 +289,11 @@ def poll_new_messages(**kwargs):
         return error_response("POLL_FAILED", f"Failed to poll Gmail: {str(e)}")
 
 
+# Never forward these to the client inbox: drafts aren't messages yet,
+# and spam/trash would open junk conversations for every phishing email.
+_SKIPPED_LABELS = {"DRAFT", "SPAM", "TRASH"}
+
+
 def _fetch_message_details(message_id: str, headers: dict) -> dict | None:
     """Helper to fetch and normalize Gmail message content."""
     url = f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}"
@@ -286,6 +302,8 @@ def _fetch_message_details(message_id: str, headers: dict) -> dict | None:
         return None
 
     data = resp.json()
+    if _SKIPPED_LABELS & set(data.get("labelIds") or []):
+        return None
     payload = data.get("payload", {})
     headers_list = payload.get("headers", [])
 
@@ -351,3 +369,79 @@ def _fetch_message_details(message_id: str, headers: dict) -> dict | None:
         "attachments": attachments,
         "label_ids": data.get("labelIds", []),
     }
+
+
+# ── Gmail push (users.watch) registration ────────────────────────────────
+#
+# Google Pub/Sub push only fires for mailboxes that have an active
+# `users.watch` registration, and registrations expire after 7 days.
+# Without these two functions the `receive_gmail_push` webhook never
+# receives anything and ingestion silently degrades to the client's
+# cron polling.
+#
+# The Pub/Sub topic is site configuration, not schema:
+#   bench --site <provider-site> set-config gmail_pubsub_topic \
+#       "projects/<gcp-project>/topics/<topic>"
+# When unset, watch registration is skipped and polling remains the
+# only ingestion path (which still works).
+
+
+def register_gmail_watch(connected_account_name: str) -> dict | None:
+    """Register (or re-register) a Gmail watch for one connected account.
+
+    Safe to call repeatedly — Gmail treats it as an upsert. Returns the
+    watch response ({historyId, expiration}) or None when skipped/failed.
+    """
+    topic = frappe.conf.get("gmail_pubsub_topic")
+    if not topic:
+        return None
+
+    ca = frappe.get_doc("MSuite Connected Account", connected_account_name)
+    if ca.platform != Platform.GMAIL:
+        return None
+
+    if not ca.access_token or not ca.token_expiry or ca.token_expiry <= add_to_date(now_datetime(), seconds=60):
+        refresh_token_fn(ca.name)
+        ca = frappe.get_doc("MSuite Connected Account", ca.name)
+
+    access_token = ca.get_password("access_token")
+    resp = requests.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={"topicName": topic, "labelIds": ["INBOX"], "labelFilterBehavior": "INCLUDE"},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        frappe.log_error(
+            title=f"Gmail watch registration failed ({ca.account_id})",
+            message=f"HTTP {resp.status_code}: {resp.text[:500]}",
+        )
+        return None
+
+    data = resp.json()
+    ca.db_set("history_id", data.get("historyId"), update_modified=False) if hasattr(ca, "history_id") else None
+    return data
+
+
+def renew_gmail_watches() -> None:
+    """Daily cron: re-register the watch for every active Gmail account.
+
+    Watches expire after 7 days; renewing daily keeps a 6-day safety
+    margin over worker downtime. No-op when gmail_pubsub_topic is unset.
+    """
+    if not frappe.conf.get("gmail_pubsub_topic"):
+        return
+
+    accounts = frappe.get_all(
+        "MSuite Connected Account",
+        filters={"platform": Platform.GMAIL, "status": "Active"},
+        pluck="name",
+    )
+    for name in accounts:
+        try:
+            register_gmail_watch(name)
+        except Exception:
+            frappe.log_error(
+                title=f"Gmail watch renewal failed ({name})",
+                message=frappe.get_traceback(),
+            )

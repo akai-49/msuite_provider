@@ -30,6 +30,10 @@ scheduler_events = {
         "msuite.scheduled_tasks.daily.reconcile_customer_groups",
         "msuite.scheduled_tasks.daily.sync_active_clients",
         "msuite.scheduled_tasks.daily.refresh_expiring_tokens",
+        # Gmail users.watch registrations expire after 7 days — renew daily
+        # so Pub/Sub push ingestion keeps flowing (no-op without
+        # gmail_pubsub_topic in site config).
+        "msuite.api.v1.gmail_relay.renew_gmail_watches",
     ]
 }
 

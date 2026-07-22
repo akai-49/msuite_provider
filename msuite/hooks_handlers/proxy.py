@@ -30,6 +30,11 @@ def before_request():
         request.path.startswith("/api/method/ai_calling.")
         or request.path.startswith("/api/method/lead_management.")
         or request.path.startswith("/api/method/msuite_workspace.")
+        # Canonical home of the lead check API (check_exists moved from
+        # msuite_workspace.api.v1.lead to paideia_crm.api.v1.lead; the
+        # old dotted path still works as a shim, but new integrations
+        # use the paideia path).
+        or request.path.startswith("/api/method/paideia_crm.")
     )
     is_httpx = ("httpx" in user_agent.lower() or "python-httpx" in user_agent.lower()) and not request.path.startswith("/api/method/login")
 

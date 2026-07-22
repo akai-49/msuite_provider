@@ -334,6 +334,20 @@ def _build_meta_ads_payload(ca, token: str) -> dict | None:
     }
 
 
+def _build_gmail_payload(ca, token: str) -> dict | None:
+    """Mirror of the Gmail credential push in oauth/google.py — the daily
+    token-refresh cron uses this to keep the client's Email Account token
+    fresh. refresh_token / app_secret are NEVER included."""
+    if not ca.account_id:
+        return None
+    return {
+        "gmail_address": ca.account_id,
+        "google_account_name": ca.display_name or ca.account_id,
+        "access_token": token,
+        "token_expires_at": str(ca.token_expiry or ""),
+    }
+
+
 def _get_business_info(ca) -> tuple[str, str]:
     """Extract business ID + name from the Connected Account's Auth Account."""
     if not ca.auth_account:
@@ -352,6 +366,7 @@ _PUSH_PAYLOAD_BUILDERS = {
     "Facebook":  _build_facebook_payload,
     "Instagram": _build_instagram_payload,
     "Meta Ads":  _build_meta_ads_payload,
+    "Gmail":     _build_gmail_payload,
 }
 
 

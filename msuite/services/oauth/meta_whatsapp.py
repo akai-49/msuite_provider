@@ -18,6 +18,7 @@ from datetime import datetime
 import frappe
 import requests
 from frappe.utils import now
+from frappe.utils.password import get_decrypted_password
 
 from msuite.constants import Platform, GRAPH_API_BASE, MSUITE_LOGGER_NAME
 from msuite.exceptions import TokenExchangeError, AccountDiscoveryError
@@ -100,11 +101,24 @@ def exchange_code(
     if not waba_ids:
         frappe.throw("No WhatsApp Business Accounts found", AccountDiscoveryError)
 
+    # Coexistence: the business connected an existing WhatsApp Business
+    # *app* number (session event FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING,
+    # payload version 3). The number is already registered on the device,
+    # so phone registration is skipped, and Meta expects the one-time
+    # contacts + history synchronization to be kicked off within 24h of
+    # onboarding — see _start_coexistence_sync below.
+    is_coexistence = bool(
+        session_info
+        and session_info.get("event") == "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"
+    )
+
     # Step 4: Process each WABA
     total_phones = 0
     connected_account_names = []
     for waba_id in waba_ids:
-        phones, ca_name = _process_waba(client_name, waba_id, access_token, app.name)
+        phones, ca_name = _process_waba(
+            client_name, waba_id, access_token, app.name, is_coexistence=is_coexistence,
+        )
         total_phones += phones
         if ca_name:
             connected_account_names.append(ca_name)
@@ -277,9 +291,15 @@ def _process_waba(
     waba_id: str,
     access_token: str,
     app_name: str,
+    is_coexistence: bool = False,
 ) -> tuple[int, str | None]:
     """
     Process one WABA: subscribe, fetch details, create records, push to client.
+
+    Coexistence (`is_coexistence=True`): the phone number stays registered
+    on the WhatsApp Business app; we additionally kick off the one-time
+    contacts + message-history sync (must happen within 24h of onboarding,
+    and can only be requested once per onboarding cycle).
 
     Returns:
         (phone_count, connected_account_name)
@@ -348,6 +368,7 @@ def _process_waba(
         "business_name": biz_name or display_name,
         "app_id": meta_app_id,
         "system_user_token": access_token,
+        "is_coexistence": 1 if is_coexistence else 0,
         "phones": [
             {
                 "phone_number_id": p["phone_number_id"],
@@ -356,12 +377,82 @@ def _process_waba(
                 "quality_rating": p["quality_rating"],
                 "messaging_limit_tier": p["messaging_limit_tier"],
                 "webhook_verify_token": p["webhook_verify_token"],
+                "platform_type": p.get("platform_type", "CLOUD_API"),
+                "is_on_biz_app": p.get("is_on_biz_app", 0),
             }
             for p in phone_rows
         ],
     })
 
+    # Coexistence: kick off the one-time contacts + history sync in the
+    # background. Must be requested within 24h of onboarding; each
+    # sync_type can only be requested once per onboarding cycle, so this
+    # is NOT retried on failure — a failed request surfaces in the log
+    # and support re-runs `start_coexistence_data_sync` manually.
+    if is_coexistence:
+        coex_phone_ids = [
+            p["phone_number_id"] for p in phone_rows
+            if p.get("is_on_biz_app") or p.get("platform_type") == "SMB_APP"
+        ] or [p["phone_number_id"] for p in phone_rows]
+        frappe.enqueue(
+            "msuite.services.oauth.meta_whatsapp.start_coexistence_data_sync",
+            queue="short",
+            enqueue_after_commit=True,
+            connected_account=ca_name,
+            phone_number_ids=coex_phone_ids,
+        )
+
     return len(phone_rows), ca_name
+
+
+def start_coexistence_data_sync(connected_account: str, phone_number_ids: list[str]) -> dict:
+    """Request the one-time coexistence data sync for each business phone.
+
+    Two SMB App Data API calls per phone, in Meta's documented order:
+      1. sync_type=smb_app_state_sync  → contacts (webhook: smb_app_state_sync)
+      2. sync_type=history             → last 180 days of 1:1 messages
+                                         (webhook: history, chunked in 3 phases)
+
+    The results arrive asynchronously as webhooks on the shared Meta app
+    and are forwarded verbatim to the owning client by WABA id — the
+    client's inbox ingests them (`feed_whatsapp_payload`). Runs as an
+    enqueued job right after coexistence onboarding; also safe to invoke
+    manually from a bench console for support recovery (subject to
+    Meta's one-request-per-onboarding-cycle rule).
+    """
+    token = get_decrypted_password(
+        "MSuite Connected Account", connected_account, "access_token", raise_exception=False,
+    )
+    if not token:
+        logger.error(f"Coexistence sync: no token on Connected Account {connected_account}")
+        return {"requested": []}
+
+    requested = []
+    for phone_id in phone_number_ids:
+        for sync_type in ("smb_app_state_sync", "history"):
+            try:
+                resp = requests.post(
+                    f"{GRAPH_API_BASE}/{phone_id}/smb_app_data",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={"messaging_product": "whatsapp", "sync_type": sync_type},
+                    timeout=30,
+                )
+                data = resp.json()
+                if resp.status_code == 200 and data.get("request_id"):
+                    requested.append({"phone": phone_id, "sync_type": sync_type,
+                                      "request_id": data["request_id"]})
+                    logger.info(
+                        f"Coexistence {sync_type} sync requested for {phone_id}: "
+                        f"request_id={data['request_id']}"
+                    )
+                else:
+                    logger.error(
+                        f"Coexistence {sync_type} sync failed for {phone_id}: {data}"
+                    )
+            except Exception as e:
+                logger.error(f"Coexistence {sync_type} sync error for {phone_id}: {e}")
+
+    return {"requested": requested}
 
 
 def _fetch_waba_details(waba_id: str, access_token: str):
@@ -428,21 +519,36 @@ def _fetch_waba_details(waba_id: str, access_token: str):
 
 
 def _fetch_phone_numbers(waba_id: str, access_token: str) -> list[dict]:
-    """Fetch phone numbers for a WABA and return formatted rows."""
+    """Fetch phone numbers for a WABA and return formatted rows.
+
+    `is_on_biz_app` marks a coexistence number (still registered on the
+    WhatsApp Business app). Requested with a fallback retry without it —
+    the field only exists on newer Graph versions / coexistence-enabled
+    apps, and one unknown field 400s the whole request.
+    """
+    base_fields = (
+        "id,display_phone_number,verified_name,quality_rating,"
+        "code_verification_status,platform_type,messaging_limit_tier"
+    )
     phone_list = []
-    try:
-        resp = requests.get(
-            f"{GRAPH_API_BASE}/{waba_id}/phone_numbers",
-            params={
-                "access_token": access_token,
-                "fields": "id,display_phone_number,verified_name,quality_rating,"
-                          "code_verification_status,platform_type,messaging_limit_tier",
-            },
-            timeout=30,
-        )
-        phone_list = resp.json().get("data", [])
-    except Exception as e:
-        logger.error(f"Failed to get phone numbers for WABA {waba_id}: {e}")
+    for fields in (base_fields + ",is_on_biz_app", base_fields):
+        try:
+            resp = requests.get(
+                f"{GRAPH_API_BASE}/{waba_id}/phone_numbers",
+                params={"access_token": access_token, "fields": fields},
+                timeout=30,
+            )
+            data = resp.json()
+            if resp.status_code == 200 and "error" not in data:
+                phone_list = data.get("data", [])
+                break
+            logger.warning(
+                f"phone_numbers fields={fields} failed for WABA {waba_id}: "
+                f"{data.get('error', {}).get('message', resp.status_code)}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to get phone numbers for WABA {waba_id}: {e}")
+            break
 
     return [
         {
@@ -453,6 +559,7 @@ def _fetch_phone_numbers(waba_id: str, access_token: str) -> list[dict]:
             "messaging_limit_tier": phone.get("messaging_limit_tier", ""),
             "code_verification_status": phone.get("code_verification_status", ""),
             "platform_type": phone.get("platform_type", "CLOUD_API"),
+            "is_on_biz_app": 1 if phone.get("is_on_biz_app") else 0,
             "webhook_verify_token": frappe.generate_hash(length=20),
             "status": "Active",
         }

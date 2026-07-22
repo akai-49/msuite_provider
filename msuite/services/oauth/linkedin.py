@@ -33,6 +33,7 @@ logger = frappe.logger(MSUITE_LOGGER_NAME)
 LI_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 LI_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LI_API = "https://api.linkedin.com"
+LI_VERSION = "202605"
 
 LI_SCOPES = [
     "openid",
@@ -201,8 +202,12 @@ def _get_user_info(token: str) -> dict:
 def _get_managed_organizations(token: str) -> list[dict]:
     try:
         resp = requests.get(
-            f"{LI_API}/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organizationalTarget))",
-            headers={"Authorization": f"Bearer {token}"},
+            f"{LI_API}/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Restli-Protocol-Version": "2.0.0",
+                "Linkedin-Version": LI_VERSION,
+            },
             timeout=30,
         )
         return resp.json().get("elements", [])
@@ -214,9 +219,13 @@ def _get_managed_organizations(token: str) -> list[dict]:
 def _get_org_info(token: str, org_id: str) -> dict:
     try:
         resp = requests.get(
-            f"{LI_API}/v2/organizations/{org_id}",
-            params={"projection": "(localizedName,vanityName,logoV2(original~:playableStreams))"},
-            headers={"Authorization": f"Bearer {token}"},
+            f"{LI_API}/rest/organizations/{org_id}",
+            params={"fields": "localizedName,vanityName,logoV2"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "X-Restli-Protocol-Version": "2.0.0",
+                "Linkedin-Version": LI_VERSION,
+            },
             timeout=30,
         )
         return resp.json()
