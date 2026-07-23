@@ -126,13 +126,14 @@ class Platform:
     FACEBOOK = "Facebook"
     INSTAGRAM = "Instagram"
     META_ADS = "Meta Ads"
+    META_CATALOGUE = "Meta Catalogue"
     GOOGLE = "Google"
     YOUTUBE = "YouTube"
     GMAIL = "Gmail"
     TIKTOK = "TikTok"
     LINKEDIN = "LinkedIn"
     TWITTER = "Twitter"
-    ALL = [WHATSAPP, FACEBOOK, INSTAGRAM, META_ADS, GOOGLE, YOUTUBE, GMAIL, TIKTOK, LINKEDIN, TWITTER]
+    ALL = [WHATSAPP, FACEBOOK, INSTAGRAM, META_ADS, META_CATALOGUE, GOOGLE, YOUTUBE, GMAIL, TIKTOK, LINKEDIN, TWITTER]
 
 
 class ConnectedAccountStatus:

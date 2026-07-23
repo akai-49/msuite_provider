@@ -37,6 +37,7 @@ from . import google
 from . import linkedin
 from . import meta_ads
 from . import meta_all
+from . import meta_catalogue
 from . import meta_social
 from . import meta_whatsapp
 from . import twitter
@@ -54,6 +55,7 @@ _AUTH_URL_BUILDERS = {
     "meta_social": meta_social.build_auth_url,
     "meta_ads":    meta_ads.build_auth_url,
     "meta_all":    meta_all.build_auth_url,
+    "meta_catalogue": meta_catalogue.build_auth_url,
     "linkedin":    linkedin.build_auth_url,
     "twitter":     twitter.build_auth_url,
     "google":      google.build_auth_url,
@@ -66,6 +68,7 @@ _TOKEN_EXCHANGERS = {
     "meta_social": meta_social.exchange_token,
     "meta_ads":    meta_ads.exchange_token,
     "meta_all":    meta_all.exchange_token,
+    "meta_catalogue": meta_catalogue.exchange_token,
     "linkedin":    linkedin.exchange_token,
     "twitter":     twitter.exchange_token,
     "google":      google.exchange_token,
@@ -78,6 +81,7 @@ _ACCOUNT_DISCOVERERS = {
     "meta_social": meta_social.discover_accounts,
     "meta_ads":    meta_ads.discover_accounts,
     "meta_all":    meta_all.discover_accounts,
+    "meta_catalogue": meta_catalogue.discover_accounts,
     "linkedin":    linkedin.discover_accounts,
     "twitter":     twitter.discover_accounts,
     "google":      google.discover_accounts,
@@ -96,6 +100,7 @@ _TOKEN_REFRESHERS = {
     "Facebook":  meta_base.refresh_long_lived_token,
     "Instagram": meta_base.refresh_long_lived_token,
     "Meta Ads":  meta_base.refresh_long_lived_token,
+    "Meta Catalogue": meta_base.refresh_long_lived_token,
     "LinkedIn":  linkedin.refresh_token,
     "Twitter":   twitter.refresh_token_fn,
     "YouTube":   google.refresh_token_fn,
