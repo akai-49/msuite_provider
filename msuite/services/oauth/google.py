@@ -172,6 +172,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
                     "display_name": channel_title,
                     "auth_account": auth_name,
                     "access_token": token,
+                    "refresh_token": refresh_token,   # required by refresh_token_fn
                     "token_type": "User Token",
                     "msuite_app": app_name,
                     "token_expiry": add_to_date(now(), seconds=expires_in),

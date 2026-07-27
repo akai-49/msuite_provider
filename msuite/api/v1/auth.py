@@ -803,3 +803,55 @@ def get_app_id_for_client(client_name: str, platform: str) -> dict:
     except Exception as e:
         return error_response(ErrorCode.INVALID_INPUT, str(e))
 
+
+
+# Client-side platform labels that differ from the provider's.
+_CLIENT_PLATFORM_ALIASES = {"X": "Twitter"}
+
+
+@frappe.whitelist(allow_guest=True)
+def refresh_account_token(client_name: str, platform: str, account_id: str) -> dict:
+    """Refresh one account's access token on demand and hand it back.
+
+    The daily `refresh_all_tokens` cron is too coarse for Google: those
+    access tokens live 1 hour, so a client site that only ever sees the
+    pushed copy is holding a dead token most of the day. The client
+    calls this right before it needs the token.
+    """
+    from msuite.services.oauth import _TOKEN_REFRESHERS
+
+    try:
+        client_doc = require_msuite_client_auth(client_name)
+        platform = _CLIENT_PLATFORM_ALIASES.get(platform, platform)
+
+        refresher = _TOKEN_REFRESHERS.get(platform)
+        if not refresher:
+            return error_response(
+                ErrorCode.INVALID_INPUT, f"{platform} tokens cannot be refreshed — reconnect required"
+            )
+
+        ca_name = frappe.db.get_value(
+            "MSuite Connected Account",
+            {"client": client_doc.name, "platform": platform, "account_id": account_id},
+            "name",
+        )
+        if not ca_name:
+            return error_response(
+                ErrorCode.INVALID_INPUT, f"No connected {platform} account {account_id}"
+            )
+
+        refresher(ca_name)
+
+        ca = frappe.get_doc("MSuite Connected Account", ca_name)
+        frappe.db.set_value(
+            "MSuite Connected Account", ca_name,
+            {"last_refreshed": frappe.utils.now_datetime(), "last_refresh_error": ""},
+            update_modified=False,
+        )
+        return success_response({
+            "access_token": ca.get_password("access_token"),
+            "token_expires_at": str(ca.token_expiry or ""),
+        })
+    except Exception as e:
+        logger.warning(f"On-demand token refresh failed for {client_name}/{platform}/{account_id}: {e}")
+        return error_response(ErrorCode.INVALID_INPUT, str(e))

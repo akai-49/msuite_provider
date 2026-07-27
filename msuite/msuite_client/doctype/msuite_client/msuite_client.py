@@ -22,6 +22,7 @@ from msuite.constants import (
     MSUITE_LOGGER_NAME,
 )
 from msuite.exceptions import ClientActivationError
+from msuite.utils.validators import require_system_manager_or_msuite_manager
 
 logger = frappe.logger(MSUITE_LOGGER_NAME)
 
@@ -72,6 +73,7 @@ def test_connection(client_name: str) -> dict:
     Returns:
         dict with status, message, app_version
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Client", client_name)
     from msuite.services.client_service import test_client_connection
     result = test_client_connection(doc.client_url)
@@ -96,6 +98,7 @@ def activate_client(client_name: str) -> dict:
     Returns:
         Success dict
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Client", client_name)
 
     if doc.status == ClientStatus.ACTIVE:
@@ -148,6 +151,7 @@ def push_plan(client_name: str) -> dict:
     Returns:
         Success dict
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Client", client_name)
 
     if doc.status != ClientStatus.ACTIVE:
@@ -187,6 +191,7 @@ def push_credentials(client_name: str) -> dict:
     stored Provider-side records — the same shape the OAuth discovery
     created on first connect.
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Client", client_name)
 
     if doc.status != ClientStatus.ACTIVE:
@@ -348,6 +353,19 @@ def _build_gmail_payload(ca, token: str) -> dict | None:
     }
 
 
+def _build_youtube_payload(ca, token: str) -> dict | None:
+    """Mirror of the YouTube credential push in oauth/google.py — keeps the
+    client's Social Account token fresh after a cron/on-demand refresh."""
+    if not ca.account_id:
+        return None
+    return {
+        "channel_id": ca.account_id,
+        "channel_title": ca.display_name or ca.account_id,
+        "access_token": token,
+        "token_expires_at": str(ca.token_expiry or ""),
+    }
+
+
 def _get_business_info(ca) -> tuple[str, str]:
     """Extract business ID + name from the Connected Account's Auth Account."""
     if not ca.auth_account:
@@ -367,6 +385,7 @@ _PUSH_PAYLOAD_BUILDERS = {
     "Instagram": _build_instagram_payload,
     "Meta Ads":  _build_meta_ads_payload,
     "Gmail":     _build_gmail_payload,
+    "YouTube":   _build_youtube_payload,
 }
 
 
@@ -381,6 +400,7 @@ def suspend_client(client_name: str) -> dict:
     Returns:
         Success dict
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Client", client_name)
 
     if doc.status != ClientStatus.ACTIVE:
@@ -420,6 +440,7 @@ def reactivate_client(client_name: str) -> dict:
         On success:  {"status": "success", "message": ...}
         On fresh instance: {"status": "needs_fresh_activation", "message": ...}
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Client", client_name)
 
     if doc.status not in (ClientStatus.SUSPENDED, ClientStatus.DISCONNECTED):
@@ -486,6 +507,7 @@ def revoke_whatsapp_access(connected_account_name: str) -> dict:
     Returns:
         Success dict
     """
+    require_system_manager_or_msuite_manager()
     ca = frappe.get_doc("MSuite Connected Account", connected_account_name)
 
     if ca.status == ConnectedAccountStatus.REVOKED:

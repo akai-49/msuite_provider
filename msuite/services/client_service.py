@@ -58,7 +58,13 @@ def build_client_plan_data(customer: str) -> dict:
         customer: ERPNext Customer name
 
     Returns:
-        Dict with plan_name, billing_interval, features (flat)
+        Dict with plan_name, products, features (flat)
+
+    `products` is the list of MSuite Product codes the customer holds. The
+    client hides/locks whole modules on it. Note the asymmetry with
+    `features`: an ABSENT `products` key means "pre-Phase-1 payload, don't
+    gate", an EMPTY list means "gate everything" — see the client's
+    `plan_enforcer.get_products`.
     """
     from msuite.services.entitlement_service import get_customer_entitlements
 
@@ -86,10 +92,20 @@ def build_client_plan_data(customer: str) -> dict:
             "label": label,
         }
 
-    return {
+    payload = {
         "plan_name": plan_name,
         "features": enriched_features,
     }
+
+    # Entitlements are Redis-cached with a TTL, so right after a deploy we can
+    # still be handed a pre-Phase-1 dict with no `active_products`. Emitting
+    # `products: []` there would lock every module on the client; omitting the
+    # key instead makes the client fall back to "don't gate" until the cache
+    # rolls over. Never turn this into a `.get(..., [])`.
+    if "active_products" in entitlements:
+        payload["products"] = entitlements["active_products"]
+
+    return payload
 
 
 # ======================================================================
@@ -188,7 +204,7 @@ def push_plan_to_client(client_doc, plan_data: dict) -> dict:
     Returns:
         Response dict from client
     """
-    headers = _make_auth_headers(client_doc)
+    headers = make_auth_headers(client_doc)
 
     return _post_to_client(
         client_doc.client_url,
@@ -214,7 +230,7 @@ def push_credentials_to_client(
     Returns:
         Response dict from client
     """
-    headers = _make_auth_headers(client_doc)
+    headers = make_auth_headers(client_doc)
 
     return _post_to_client(
         client_doc.client_url,
@@ -248,7 +264,7 @@ def push_account_state_to_client(
     Returns:
         Whatever the client receiver returned (status dict).
     """
-    headers = _make_auth_headers(client_doc)
+    headers = make_auth_headers(client_doc)
 
     return _post_to_client(
         client_doc.client_url,
@@ -273,7 +289,7 @@ def suspend_client_instance(client_doc) -> dict:
     Returns:
         Response dict from client
     """
-    headers = _make_auth_headers(client_doc)
+    headers = make_auth_headers(client_doc)
 
     return _post_to_client(
         client_doc.client_url,
@@ -350,7 +366,7 @@ def sync_all_active_clients() -> dict:
 # ======================================================================
 
 
-def _make_auth_headers(client_doc) -> dict:
+def make_auth_headers(client_doc) -> dict:
     """Build authentication headers for provider→client requests."""
     api_secret = get_decrypted_password(
         "MSuite Client", client_doc.name, "api_secret"

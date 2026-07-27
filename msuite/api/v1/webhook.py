@@ -55,6 +55,75 @@ def receive_meta_whatsapp(**kwargs):
 
 
 @frappe.whitelist(allow_guest=True)
+def receive_meta_catalogue(**kwargs):
+    """
+    Meta Product Catalog webhook endpoint (`product_catalog` object).
+
+    Named `receive_meta_catalogue` (not `..._catalog`) so it matches the URL
+    `MSuite App._auto_generate_webhook_url` builds from the "Meta Catalogue"
+    platform slug — same convention as receive_meta_whatsapp / _social.
+    GET: Verification challenge from Meta.
+    POST: `batch_status_updates` (async items_batch result) and
+    `product_events` (Meta-initiated status change on an existing product).
+
+    Routing is per-catalog: each `entry` carries a catalog_id, looked up via
+    the `Meta Catalogue`-platform Connected Account (see meta_catalogue.py's
+    discover_accounts) — same shape as the WABA-keyed WhatsApp routing below.
+    """
+    if frappe.request.method == "GET":
+        return _handle_verification("Meta Catalogue")
+
+    if not _validate_meta_signature("Meta Catalogue"):
+        frappe.throw(_("Invalid webhook signature"), frappe.AuthenticationError)
+
+    payload = frappe.request.get_json(silent=True) or {}
+    object_type = payload.get("object", "product_catalog")
+
+    for entry in payload.get("entry") or []:
+        catalog_id = entry.get("id")
+        if not catalog_id:
+            continue
+        # Rebuild a one-entry payload, same reason as `_dispatch_entry`
+        # below: the shared Meta App receives every tenant's catalog
+        # events in one webhook call, so each client only gets its own.
+        forward_payload = {"object": object_type, "entry": [entry]}
+        _forward_catalog_event(catalog_id, forward_payload)
+
+    return {"status": "ok"}
+
+
+def _forward_catalog_event(catalog_id: str, payload: dict) -> None:
+    """Look up the Client that owns this Meta Product Catalog and forward
+    the payload — catalog_id → MSuite Connected Account (Meta Catalogue) →
+    MSuite Client."""
+    connected = frappe.db.get_value(
+        "MSuite Connected Account",
+        {"account_id": catalog_id, "platform": "Meta Catalogue", "status": "Active"},
+        ["client", "name"],
+        as_dict=True,
+    )
+    if not connected:
+        logger.debug(f"Catalog webhook for unknown catalog_id={catalog_id} — dropping")
+        return
+
+    client_doc = frappe.get_doc("MSuite Client", connected.client)
+    if client_doc.status != "Active":
+        logger.warning(
+            f"Catalog webhook for catalog_id={catalog_id} → client {connected.client} "
+            f"is {client_doc.status}, NOT forwarding"
+        )
+        return
+
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint="msuite_workspace.meta_ecommerce.api.v1.webhook.receive_meta_catalog_event",
+        payload=payload,
+    )
+
+
+@frappe.whitelist(allow_guest=True)
 def receive_meta_social(**kwargs):
     """
     Meta Social webhook endpoint (Facebook / Instagram / Ads leadgen).
@@ -169,6 +238,9 @@ _FIELD_TO_ENDPOINT = {
     "feed":     "msuite_workspace.inbox.api.v1.webhook.receive_meta_feed",
     # IG comments on the connected Business/Creator account's media.
     "comments": "msuite_workspace.inbox.api.v1.webhook.receive_meta_ig_comments",
+    # Meta Commerce order events (Shops/Instagram Shopping/Marketplace),
+    # page/IG-scoped like leadgen/feed/comments above.
+    "commerce_orders": "msuite_workspace.meta_ecommerce.api.v1.webhook.receive_meta_commerce_order",
 }
 
 
@@ -381,20 +453,13 @@ def _post_to_client(client_doc, endpoint: str, payload: dict) -> None:
     `validate_provider_auth()` checks.
     """
     import requests
-
-    api_key = client_doc.api_key or ""
-    api_secret = (client_doc.get_password("api_secret")
-                  if client_doc.api_secret else "")
+    from msuite.services.client_service import make_auth_headers
 
     url = f"{client_doc.client_url}/api/method/{endpoint}"
     try:
         resp = requests.post(
             url,
-            headers={
-                "Content-Type": "application/json",
-                "X-MSuite-Provider-Key": api_key,
-                "X-MSuite-Provider-Secret": api_secret,
-            },
+            headers=make_auth_headers(client_doc),
             json=payload,
             timeout=15,
         )
@@ -477,6 +542,22 @@ def receive_gmail_push(**kwargs):
     """
     if frappe.request.method == "GET":
         return {"status": "ok"}
+
+    # Auth: Pub/Sub push carries a shared token in the endpoint URL query
+    # string (?token=…), matched against `gmail_push_token` in site_config.
+    # Fails closed — without it, anyone could POST fake pushes to trigger
+    # sync jobs or probe which Gmail addresses are connected. The endpoint
+    # only drives ingestion, so polling remains the fallback when unset.
+    expected_token = frappe.conf.get("gmail_push_token")
+    if not expected_token:
+        logger.error("Gmail push received but gmail_push_token is not configured — rejecting.")
+        frappe.throw(_("Gmail push authentication not configured"), frappe.AuthenticationError)
+    # Read from the query string directly, not form_dict: Pub/Sub POSTs a
+    # JSON body, and Frappe replaces form_dict with the parsed JSON — which
+    # would drop the ?token=… query param.
+    sent_token = (frappe.request.args.get("token") or "").strip()
+    if not (sent_token and hmac.compare_digest(sent_token, str(expected_token))):
+        frappe.throw(_("Invalid Gmail push token"), frappe.AuthenticationError)
 
     payload = frappe.request.get_json(silent=True) or {}
     message = payload.get("message", {})

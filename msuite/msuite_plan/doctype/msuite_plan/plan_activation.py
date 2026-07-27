@@ -16,6 +16,7 @@ from frappe.utils import now
 
 from msuite.constants import PlanTier
 from msuite.exceptions import MSuiteError
+from msuite.utils.validators import require_system_manager_or_msuite_manager
 
 # Billing interval → item code suffix
 INTERVAL_SUFFIX = {"Monthly": "MONTHLY", "Quarterly": "QUARTERLY", "Annual": "ANNUAL"}
@@ -318,6 +319,7 @@ def activate_plan(plan_name: str) -> dict:
     Activate an MSuite Plan. Validates readiness, creates ERPNext
     Items + Subscription Plans, sets is_active=1.
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Plan", plan_name)
     validate_activation_readiness(doc)
     create_items_and_subscription_plans(doc)
@@ -336,6 +338,7 @@ def activate_plan(plan_name: str) -> dict:
 @frappe.whitelist()
 def deactivate_plan(plan_name: str) -> dict:
     """Deactivate an MSuite Plan. Existing subscriptions continue."""
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Plan", plan_name)
     if not doc.is_active:
         frappe.throw("Plan is already inactive", frappe.ValidationError)
@@ -350,6 +353,7 @@ def deactivate_plan(plan_name: str) -> dict:
 @frappe.whitelist()
 def reactivate_plan(plan_name: str) -> dict:
     """Reactivate a previously deactivated plan. Items must still exist."""
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Plan", plan_name)
     if doc.is_active:
         frappe.throw("Plan is already active", frappe.ValidationError)

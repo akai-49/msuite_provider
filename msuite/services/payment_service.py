@@ -112,27 +112,20 @@ def process_webhook(
         as_dict=True,
     )
 
+    # No guessing: a webhook whose gateway reference matches no Payment
+    # Request must NOT be applied to some arbitrary open invoice. Doing so
+    # would mark an unrelated customer's invoice as paid. Log and skip.
     if not pr:
-        pr_list = frappe.get_list(
-            "Payment Request",
-            filters={"status": ["in", ["Initiated", "Requested"]]},
-            fields=["name", "reference_name"],
-            limit_page_length=1,
-            order_by="creation desc",
+        logger.warning(
+            f"No Payment Request matches gateway reference {gateway_reference!r} "
+            f"({gateway}); skipping — no Payment Entry created."
         )
-        pr = pr_list[0] if pr_list else None
+        return {"status": "unmatched", "payment_entry": None}
 
     paid_amount = _extract_paid_amount(gateway, payload)
-    payment_request_name = pr.name if pr else None
-
-    if payment_request_name:
-        entry_name = create_payment_entry(payment_request_name, gateway_reference, paid_amount)
-        invoice_name = pr.reference_name if pr else None
-        if invoice_name:
-            _reactivate_subscription_if_grace_period(invoice_name)
-    else:
-        logger.warning(f"No Payment Request found for gateway reference {gateway_reference}")
-        entry_name = None
+    entry_name = create_payment_entry(pr.name, gateway_reference, paid_amount)
+    if pr.reference_name:
+        _reactivate_subscription_if_grace_period(pr.reference_name)
 
     return {"status": "processed", "payment_entry": entry_name}
 

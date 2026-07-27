@@ -32,7 +32,7 @@
             "fieldname": "platform",
             "fieldtype": "Select",
             "label": "Platform",
-            "options": "Meta WhatsApp\nMeta Social\nGoogle\nTikTok\nLinkedIn\nTwitter\nAI Calling",
+            "options": "Meta WhatsApp\nMeta Social\nMeta Catalogue\nGoogle\nTikTok\nLinkedIn\nTwitter\nAI Calling",
             "reqd": 1,
             "in_list_view": 1
         },

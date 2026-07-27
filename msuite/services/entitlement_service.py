@@ -59,12 +59,20 @@ def get_customer_entitlements(customer: str) -> dict:
         fields=["name"],
     )
 
+    # Resolve each subscription's MSuite plans in a single pass — load each
+    # Subscription doc once and memoize the Subscription Plan → MSuite Plan
+    # lookup (previously both were done twice, once per merge phase).
+    sub_msuite_plans: list[str] = []  # ordered, drives the feature merge below
+    sp_to_msuite: dict[str, str | None] = {}
     for sub in subscriptions:
         sub_doc = frappe.get_doc("Subscription", sub.name)
         for plan_row in sub_doc.plans:
-            msuite_plan = get_msuite_plan_for_subscription_plan(plan_row.plan)
+            if plan_row.plan not in sp_to_msuite:
+                sp_to_msuite[plan_row.plan] = get_msuite_plan_for_subscription_plan(plan_row.plan)
+            msuite_plan = sp_to_msuite[plan_row.plan]
             if msuite_plan:
                 msuite_plan_names.add(msuite_plan)
+                sub_msuite_plans.append(msuite_plan)
 
     # Load Active Customer Grants
     grants = frappe.get_list(
@@ -76,31 +84,32 @@ def get_customer_entitlements(customer: str) -> dict:
     for grant in grants:
         msuite_plan_names.add(grant.granted_plan)
 
-    # Batch-load all plan_name values in one query
+    # Batch-load all plan_name + product values in one query. `product` is a
+    # Link to MSuite Product, which is autonamed `field:product_code` — so the
+    # value IS the product code the client gates on ("WA", "ADS", …).
     plan_name_map: dict[str, str] = {}
+    plan_product_map: dict[str, str] = {}
     if msuite_plan_names:
         plan_rows = frappe.get_list(
             "MSuite Plan",
             filters={"name": ["in", list(msuite_plan_names)]},
-            fields=["name", "plan_name"],
+            fields=["name", "plan_name", "product"],
         )
         plan_name_map = {r.name: r.plan_name for r in plan_rows}
+        plan_product_map = {r.name: r.product for r in plan_rows if r.product}
 
     # Build feature maps for all unique plans (each _build_feature_map_for_plan is cached-friendly)
     plan_feature_cache: dict[str, dict] = {}
     for plan in msuite_plan_names:
         plan_feature_cache[plan] = _build_feature_map_for_plan(plan)
 
-    # Merge subscription plan features
-    for sub in subscriptions:
-        sub_doc = frappe.get_doc("Subscription", sub.name)
-        for plan_row in sub_doc.plans:
-            msuite_plan = get_msuite_plan_for_subscription_plan(plan_row.plan)
-            if msuite_plan and msuite_plan in plan_feature_cache:
-                merged_features = _merge_feature_maps(merged_features, plan_feature_cache[msuite_plan])
-                pn = plan_name_map.get(msuite_plan)
-                if pn and pn not in active_plans:
-                    active_plans.append(pn)
+    # Merge subscription plan features (order preserved from the pass above)
+    for msuite_plan in sub_msuite_plans:
+        if msuite_plan in plan_feature_cache:
+            merged_features = _merge_feature_maps(merged_features, plan_feature_cache[msuite_plan])
+            pn = plan_name_map.get(msuite_plan)
+            if pn and pn not in active_plans:
+                active_plans.append(pn)
 
     # Merge grant features
     for grant in grants:
@@ -116,10 +125,18 @@ def get_customer_entitlements(customer: str) -> dict:
             "expires_on": str(grant.expires_on) if grant.expires_on else None,
         })
 
+    # Products the customer holds. Every plan in msuite_plan_names contributed
+    # to the merge above (subscription or grant), so its product is entitled.
+    # Gating on the plan's product — not on the feature rows' parent product —
+    # is what keeps the six cross-product feature_key collisions
+    # (templates, analytics, inbox_whatsapp, …) unambiguous.
+    active_products = sorted({plan_product_map[p] for p in msuite_plan_names if p in plan_product_map})
+
     result = {
         "customer": customer,
         "resolved_at": str(now_datetime()),
         "active_plans": active_plans,
+        "active_products": active_products,
         "active_grants": active_grants_list,
         "features": merged_features,
     }
@@ -167,9 +184,25 @@ def _build_feature_map_for_plan(plan_name: str) -> dict:
     plan_doc = frappe.get_doc("MSuite Plan", plan_name)
     feature_map: dict = {}
 
+    # Batch-resolve product_feature → feature_key in one query instead of a
+    # frappe.get_doc per feature row.
+    pf_names = [row.product_feature for row in plan_doc.features if row.product_feature]
+    key_map: dict[str, str] = {}
+    if pf_names:
+        key_map = {
+            r.name: r.feature_key
+            for r in frappe.get_all(
+                "MSuite Product Feature",
+                filters={"name": ["in", pf_names]},
+                fields=["name", "feature_key"],
+            )
+        }
+
     for row in plan_doc.features:
-        pf = frappe.get_doc("MSuite Product Feature", row.product_feature)
-        feature_map[pf.feature_key] = {
+        feature_key = key_map.get(row.product_feature)
+        if not feature_key:
+            continue
+        feature_map[feature_key] = {
             "enabled": bool(row.is_enabled),
             "limit": row.limit_value if row.limit_value else None,
             "limit_label": row.limit_label,

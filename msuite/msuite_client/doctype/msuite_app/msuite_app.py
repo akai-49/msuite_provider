@@ -18,6 +18,7 @@ from frappe.model.document import Document
 from frappe.utils import get_url, now
 
 from msuite.constants import ClientStatus, SyncStatus, MSUITE_LOGGER_NAME
+from msuite.utils.validators import require_system_manager_or_msuite_manager
 
 logger = frappe.logger(MSUITE_LOGGER_NAME)
 
@@ -73,6 +74,7 @@ def push_ai_calling_config(app_name: str) -> dict:
     No shared secret is involved — the client's whitelisted endpoints
     that the AWS backend calls back into are unauthenticated for now.
     """
+    require_system_manager_or_msuite_manager()
     app = frappe.get_doc("MSuite App", app_name)
     if app.platform != "AI Calling":
         frappe.throw("This is not an AI Calling app record.", frappe.ValidationError)

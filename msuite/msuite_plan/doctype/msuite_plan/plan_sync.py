@@ -12,6 +12,7 @@ import frappe
 from frappe.utils import now
 
 from msuite.constants import SyncStatus
+from msuite.utils.validators import require_system_manager_or_msuite_manager
 
 
 @frappe.whitelist()
@@ -25,6 +26,7 @@ def push_to_all_clients(plan_name: str) -> dict:
     Returns:
         {"pushed": N, "failed": N, "clients": [...], "message": "..."}
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Plan", plan_name)
     if not doc.is_active:
         frappe.throw("Cannot push: plan is not active.", frappe.ValidationError)

@@ -65,33 +65,6 @@ def get_ai_calling_config(client_identifier: str) -> dict:
     return success_response({"ai_backend_url": ai_backend_url})
 
 
-@frappe.whitelist(allow_guest=True)
-def get_s3_credentials(client_identifier: str) -> dict:
-    """
-    Return the AWS S3 credentials from 'S3 File Attachment' to the authenticated client.
-    """
-    try:
-        require_msuite_client_auth(client_identifier)
-    except frappe.AuthenticationError as exc:
-        return error_response("AUTH_FAILED", str(exc))
-
-    if not frappe.db.exists("DocType", "S3 File Attachment"):
-        return error_response("NOT_FOUND", "S3 File Attachment doctype not found on provider.")
-
-    try:
-        doc = frappe.get_doc("S3 File Attachment", "S3 File Attachment")
-        aws_secret = doc.get_password("aws_secret") if hasattr(doc, "get_password") else doc.aws_secret
-        return success_response({
-            "aws_key": doc.aws_key,
-            "aws_secret": aws_secret,
-            "bucket_name": doc.bucket_name,
-            "region_name": doc.region_name,
-            "folder_name": doc.folder_name,
-        })
-    except Exception as exc:
-        return error_response("ERROR", str(exc))
-
-
 # ═════════════════════════ Presigned S3 access ════════════════════════════════
 #
 # Clients never hold AWS credentials: they request short-lived presigned
@@ -230,9 +203,19 @@ def register_did(client_identifier: str, did: str, organization: str = None) -> 
     if not did:
         return error_response("INVALID", "DID is required.")
 
-    existing = frappe.db.get_value("MSuite AI DID", {"did": ["in", _did_variants(did)]}, "name")
+    existing = frappe.db.get_value(
+        "MSuite AI DID", {"did": ["in", _did_variants(did)]}, ["name", "client"], as_dict=True
+    )
     if existing:
-        frappe.db.set_value("MSuite AI DID", existing, {
+        # Tenant isolation: a DID already owned by another client must not be
+        # re-pointed by this caller, or Client A could hijack Client B's
+        # inbound-call routing / org-config lookups.
+        if existing.client and existing.client != client_doc.name:
+            return error_response(
+                "CONFLICT",
+                f"DID {did} is already registered to another client.",
+            )
+        frappe.db.set_value("MSuite AI DID", existing.name, {
             "client": client_doc.name,
             "organization": organization,
             "is_active": 1,
@@ -267,18 +250,22 @@ _CALL_ROUTE_CACHE_TTL = 14 * 24 * 3600  # call_id → client, survives late reco
 
 def _require_backend_key():
     """
-    Authenticate the FastAPI backend on proxy endpoints. Enforced when
-    ``ai_backend_shared_key`` is set in the provider's site_config; the
-    backend must then send it as the ``X-AI-Backend-Key`` header. Left
-    open (with a warning) until the key is configured on both sides.
+    Authenticate the FastAPI backend on proxy endpoints. The backend must
+    send ``ai_backend_shared_key`` (from the provider's site_config) as the
+    ``X-AI-Backend-Key`` header. Fails closed: if the key is not configured
+    on the provider, every proxy endpoint is rejected — these endpoints
+    forward to client sites and must never be reachable unauthenticated.
     """
     expected = frappe.conf.get("ai_backend_shared_key")
     if not expected:
-        logger.warning(
-            "[AI Calling] Proxy endpoint called without ai_backend_shared_key "
-            "configured — set it in site_config and on the backend to lock this down."
+        logger.error(
+            "[AI Calling] Proxy endpoint called but ai_backend_shared_key is not "
+            "configured — rejecting. Set it in site_config and on the backend."
         )
-        return
+        frappe.throw(
+            "AI backend authentication is not configured on this provider.",
+            frappe.AuthenticationError,
+        )
     import hmac
     sent = (frappe.request.headers.get("X-AI-Backend-Key") or "").strip()
     if not (sent and hmac.compare_digest(sent, str(expected))):
@@ -287,15 +274,10 @@ def _require_backend_key():
 
 def _forward_to_client(client_doc, endpoint: str, payload: dict) -> dict:
     """POST to a client's whitelisted endpoint and return the parsed message."""
-    api_key = client_doc.api_key or ""
-    api_secret = client_doc.get_password("api_secret") if client_doc.api_secret else ""
+    from msuite.services.client_service import make_auth_headers
     resp = requests.post(
         f"{client_doc.client_url}/api/method/{endpoint}",
-        headers={
-            "Content-Type": "application/json",
-            "X-MSuite-Provider-Key": api_key,
-            "X-MSuite-Provider-Secret": api_secret,
-        },
+        headers=make_auth_headers(client_doc),
         json=payload,
         timeout=15,
     )

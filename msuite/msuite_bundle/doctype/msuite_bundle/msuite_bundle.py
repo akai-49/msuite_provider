@@ -16,6 +16,7 @@ from frappe.utils import now
 
 from msuite.constants import PlanTier
 from msuite.exceptions import BundleConfigurationError, MSuiteError
+from msuite.utils.validators import require_system_manager_or_msuite_manager
 
 # Billing interval → item code suffix
 INTERVAL_SUFFIX = {"Monthly": "MONTHLY", "Quarterly": "QUARTERLY", "Annual": "ANNUAL"}
@@ -307,6 +308,7 @@ def activate_bundle(bundle_name: str) -> dict:
     Returns:
         Success dict with bundle name and message
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Bundle", bundle_name)
     doc._validate_activation_readiness()
     doc._create_items_and_subscription_plans()
@@ -335,6 +337,7 @@ def deactivate_bundle(bundle_name: str) -> dict:
     Returns:
         Success dict
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Bundle", bundle_name)
     if not doc.is_active:
         frappe.throw("Bundle is already inactive", frappe.ValidationError)
@@ -360,6 +363,7 @@ def reactivate_bundle(bundle_name: str) -> dict:
     Returns:
         Success dict
     """
+    require_system_manager_or_msuite_manager()
     doc = frappe.get_doc("MSuite Bundle", bundle_name)
     if doc.is_active:
         frappe.throw("Bundle is already active", frappe.ValidationError)
