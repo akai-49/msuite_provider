@@ -322,6 +322,15 @@ def _process_waba(
     # Fetch phone numbers
     phone_rows = _fetch_phone_numbers(waba_id, access_token)
 
+    # The session event is only available in the JS-SDK popup flow. In the
+    # redirect flow (`start_whatsapp_embedded_signup`) there is no
+    # postMessage, so fall back to what Meta reports about the number.
+    if not is_coexistence:
+        is_coexistence = any(
+            p.get("is_on_biz_app") or p.get("platform_type") == "SMB_APP"
+            for p in phone_rows
+        )
+
     # Build a meaningful display name: WABA name > first phone's verified name > WABA ID
     display_name = (
         waba_name

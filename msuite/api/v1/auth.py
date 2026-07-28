@@ -154,7 +154,7 @@ def start_whatsapp_embedded_signup(client_name: str, return_url: str = "") -> di
         app = frappe.db.get_value(
             "MSuite App",
             {"platform": "Meta WhatsApp", "is_active": 1},
-            ["app_id", "config_id", "redirect_uri"],
+            ["app_id", "config_id", "redirect_uri", "allow_coexistence"],
             as_dict=True,
         )
         if not app or not app.get("app_id") or not app.get("config_id"):
@@ -200,6 +200,13 @@ def start_whatsapp_embedded_signup(client_name: str, return_url: str = "") -> di
             "response_type": "code",
             "config_id": app["config_id"],
         }
+        if app.get("allow_coexistence"):
+            # Makes the dialog list existing WhatsApp Business *app* numbers
+            # instead of only offering "Create a WhatsApp Business account".
+            params["extras"] = json.dumps({
+                "setup": {},
+                "featureType": "whatsapp_business_app_onboarding",
+            })
         auth_url = f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?{urlencode(params)}"
         return success_response({"auth_url": auth_url, "state": state})
 

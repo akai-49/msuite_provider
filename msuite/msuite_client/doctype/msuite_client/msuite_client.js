@@ -364,7 +364,15 @@ function _trigger_fb_login(frm, config_id, allow_coexistence) {
 			config_id: config_id,
 			response_type: "code",
 			override_default_response_type: true,
-			extras: { setup: {} },
+			extras: {
+				setup: {},
+				// Without this the dialog only offers "Create a WhatsApp
+				// Business account" — existing Business App numbers are
+				// never listed.
+				...(allow_coexistence
+					? { featureType: "whatsapp_business_app_onboarding" }
+					: {}),
+			},
 		}
 	);
 }

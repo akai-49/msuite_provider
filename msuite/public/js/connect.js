@@ -282,7 +282,12 @@
                 config_id: platform.config_id,
                 response_type: "code",
                 override_default_response_type: true,
-                extras: { setup: {} },
+                extras: {
+                    setup: {},
+                    ...(platform.allow_coexistence
+                        ? { featureType: "whatsapp_business_app_onboarding" }
+                        : {}),
+                },
             }
         );
     }
