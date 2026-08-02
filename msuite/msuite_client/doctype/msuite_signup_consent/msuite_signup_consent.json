@@ -6,27 +6,38 @@
  "engine": "InnoDB",
  "field_order": [
   "consent_section",
-  "client", "connected_account", "platform",
+  "client",
+  "connected_account",
+  "platform",
   "cb_consent",
-  "consent_status", "consented_at", "revoked_at",
-
+  "consent_status",
+  "consented_at",
+  "revoked_at",
   "event_section",
-  "event_type", "waba_id", "phone_number_id",
+  "event_type",
+  "waba_id",
+  "phone_number_id",
   "cb_event",
-  "business_id", "cancelled_step", "error_message",
-
+  "business_id",
+  "cancelled_step",
+  "error_message",
   "permissions_section",
-  "meta_user_id", "granted_scopes", "data_access_expires",
+  "meta_user_id",
+  "granted_scopes",
+  "data_access_expires",
   "cb_permissions",
-  "token_valid", "granular_scopes",
-
+  "token_valid",
+  "granular_scopes",
   "environment_section",
-  "ip_address", "user_agent_string",
+  "ip_address",
+  "user_agent_string",
   "cb_env",
-  "browser", "platform_os", "accept_language",
-
+  "browser",
+  "platform_os",
+  "accept_language",
   "audit_section",
-  "raw_debug_token", "raw_auth_response"
+  "raw_debug_token",
+  "raw_auth_response"
  ],
  "fields": [
   {
@@ -37,37 +48,37 @@
   {
    "fieldname": "client",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Client",
    "options": "MSuite Client",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
+   "description": "Set after signup completes. Null for CANCEL/ERROR events.",
    "fieldname": "connected_account",
    "fieldtype": "Link",
    "label": "Connected Account",
-   "options": "MSuite Connected Account",
-   "description": "Set after signup completes. Null for CANCEL/ERROR events."
+   "options": "MSuite Connected Account"
   },
   {
    "fieldname": "platform",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Platform",
    "options": "WhatsApp\nFacebook\nInstagram\nMeta Ads",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
    "fieldname": "cb_consent",
    "fieldtype": "Column Break"
   },
   {
+   "default": "Granted",
    "fieldname": "consent_status",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Consent Status",
    "options": "Granted\nRevoked\nCancelled\nFailed",
-   "default": "Granted",
-   "in_list_view": 1,
    "read_only": 1
   },
   {
@@ -77,13 +88,12 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.consent_status == 'Revoked'",
    "fieldname": "revoked_at",
    "fieldtype": "Datetime",
    "label": "Revoked At",
-   "read_only": 1,
-   "depends_on": "eval:doc.consent_status == 'Revoked'"
+   "read_only": 1
   },
-
   {
    "fieldname": "event_section",
    "fieldtype": "Section Break",
@@ -92,68 +102,67 @@
   {
    "fieldname": "event_type",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Event Type",
    "options": "FINISH\nFINISH_ONLY_WABA\nCOEXISTENCE\nCANCEL\nERROR",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
+   "description": "WhatsApp Business Account ID from session info",
    "fieldname": "waba_id",
    "fieldtype": "Data",
-   "label": "WABA ID",
-   "description": "WhatsApp Business Account ID from session info"
+   "label": "WABA ID"
   },
   {
+   "description": "From session info (null for FINISH_ONLY_WABA and CANCEL)",
    "fieldname": "phone_number_id",
    "fieldtype": "Data",
-   "label": "Phone Number ID",
-   "description": "From session info (null for FINISH_ONLY_WABA and CANCEL)"
+   "label": "Phone Number ID"
   },
   {
    "fieldname": "cb_event",
    "fieldtype": "Column Break"
   },
   {
+   "description": "Meta Business ID (from coexistence event or WABA details)",
    "fieldname": "business_id",
    "fieldtype": "Data",
-   "label": "Business ID",
-   "description": "Meta Business ID (from coexistence event or WABA details)"
+   "label": "Business ID"
   },
   {
+   "depends_on": "eval:doc.event_type == 'CANCEL'",
+   "description": "Which step the user was on when they cancelled",
    "fieldname": "cancelled_step",
    "fieldtype": "Data",
    "label": "Cancelled Step",
-   "read_only": 1,
-   "depends_on": "eval:doc.event_type == 'CANCEL'",
-   "description": "Which step the user was on when they cancelled"
+   "read_only": 1
   },
   {
+   "depends_on": "eval:doc.event_type == 'ERROR'",
    "fieldname": "error_message",
    "fieldtype": "Small Text",
    "label": "Error Message",
-   "read_only": 1,
-   "depends_on": "eval:doc.event_type == 'ERROR'"
+   "read_only": 1
   },
-
   {
+   "collapsible": 1,
    "fieldname": "permissions_section",
    "fieldtype": "Section Break",
-   "label": "Permissions (from debug_token)",
-   "collapsible": 1
+   "label": "Permissions (from debug_token)"
   },
   {
+   "description": "The Meta user who authorized the signup",
    "fieldname": "meta_user_id",
    "fieldtype": "Data",
    "label": "Meta User ID",
-   "read_only": 1,
-   "description": "The Meta user who authorized the signup"
+   "read_only": 1
   },
   {
+   "description": "JSON array of permission scopes granted",
    "fieldname": "granted_scopes",
    "fieldtype": "Small Text",
    "label": "Granted Scopes",
-   "read_only": 1,
-   "description": "JSON array of permission scopes granted"
+   "read_only": 1
   },
   {
    "fieldname": "data_access_expires",
@@ -166,26 +175,25 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": "1",
    "fieldname": "token_valid",
    "fieldtype": "Check",
    "label": "Token Valid",
-   "read_only": 1,
-   "default": "1"
+   "read_only": 1
   },
   {
+   "description": "Per-WABA permission breakdown from debug_token",
    "fieldname": "granular_scopes",
    "fieldtype": "Code",
    "label": "Granular Scopes",
    "options": "JSON",
-   "read_only": 1,
-   "description": "Per-WABA permission breakdown from debug_token"
+   "read_only": 1
   },
-
   {
+   "collapsible": 1,
    "fieldname": "environment_section",
    "fieldtype": "Section Break",
-   "label": "Client Environment",
-   "collapsible": 1
+   "label": "Client Environment"
   },
   {
    "fieldname": "ip_address",
@@ -221,12 +229,11 @@
    "label": "Accept-Language",
    "read_only": 1
   },
-
   {
+   "collapsible": 1,
    "fieldname": "audit_section",
    "fieldtype": "Section Break",
-   "label": "Audit Trail (raw responses)",
-   "collapsible": 1
+   "label": "Audit Trail (raw responses)"
   },
   {
    "fieldname": "raw_debug_token",
@@ -236,27 +243,50 @@
    "read_only": 1
   },
   {
+   "description": "Sanitized \u2014 tokens are NOT stored here",
    "fieldname": "raw_auth_response",
    "fieldtype": "Code",
    "label": "Raw Auth Response",
    "options": "JSON",
-   "read_only": 1,
-   "description": "Sanitized — tokens are NOT stored here"
+   "read_only": 1
   }
  ],
- "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-04-07 12:00:00",
+ "modified": "2026-07-28 16:58:17.830270",
  "modified_by": "Administrator",
  "module": "MSuite Client",
  "name": "MSuite Signup Consent",
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
-  {"role": "System Manager", "read": 1, "write": 1, "create": 1},
-  {"role": "MSuite Manager", "read": 1, "write": 1, "create": 1}
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "MSuite Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Administrator",
+   "share": 1,
+   "write": 1
+  }
  ],
+ "row_format": "Dynamic",
  "sort_field": "consented_at",
  "sort_order": "DESC",
+ "states": [],
  "title_field": "client"
 }

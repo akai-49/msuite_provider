@@ -364,6 +364,7 @@ function _trigger_fb_login(frm, config_id, allow_coexistence) {
 			config_id: config_id,
 			response_type: "code",
 			override_default_response_type: true,
+			scope: "whatsapp_business_management,whatsapp_business_messaging",
 			extras: {
 				setup: {},
 				// Without this the dialog only offers "Create a WhatsApp

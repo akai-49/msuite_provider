@@ -193,9 +193,11 @@ def _dispatch_dm(page_id: str, entry: dict, object_type: str) -> None:
 
     The platform-side id we received (`page_id` here) is either a Page
     id (object=page) or an IG Business Account id (object=instagram).
-    Both resolve to a Social Account on the client side, so we use the
-    same Facebook-platform Connected Account lookup the field-routing
-    path uses — the platform is denormalised on the Connected Account.
+    Each resolves through its OWN platform's Connected Account row — an
+    IG event must never be looked up as a Facebook Page or vice versa.
+    For Instagram we additionally fall back to the MSuite Instagram
+    Account asset table (instagram_user_id → connected_account) since
+    older Connected Account rows can predate the IG-id denormalisation.
     """
     platform = "Instagram" if object_type == "instagram" else "Facebook"
     connected = frappe.db.get_value(
@@ -204,14 +206,40 @@ def _dispatch_dm(page_id: str, entry: dict, object_type: str) -> None:
         ["client", "name"],
         as_dict=True,
     )
+    if not connected and platform == "Instagram":
+        ca_name = frappe.db.get_value(
+            "MSuite Instagram Account", {"instagram_user_id": page_id}, "connected_account"
+        )
+        if ca_name:
+            connected = frappe.db.get_value(
+                "MSuite Connected Account",
+                {"name": ca_name, "status": "Active"},
+                ["client", "name"],
+                as_dict=True,
+            )
     if not connected:
-        logger.info(
-            f"DM webhook for unknown {platform} id={page_id} — no active Connected Account."
+        # Unmapped DM events are an operator problem (an OAuth'd account
+        # missing its Connected Account row), not routine cross-tenant
+        # noise like unknown WABAs — surface them in Error Log.
+        frappe.log_error(
+            title=f"Meta DM webhook unmapped ({platform})",
+            message=f"No active Connected Account for {platform} id={page_id} "
+            f"(object={object_type}). Event dropped.",
         )
         return
 
+    # Subscription health: record that this asset is still producing events.
+    frappe.db.set_value(
+        "MSuite Connected Account", connected.name,
+        "last_inbound_event_at", frappe.utils.now(), update_modified=False,
+    )
+
     client_doc = frappe.get_doc("MSuite Client", connected.client)
     if client_doc.status != "Active":
+        logger.warning(
+            f"DM webhook for {platform} id={page_id} → client {connected.client} "
+            f"is {client_doc.status}, NOT forwarding"
+        )
         return
 
     forward_payload = {
@@ -444,13 +472,15 @@ def _forward_to_client(waba_id: str, payload: dict):
     )
 
 
-def _post_to_client(client_doc, endpoint: str, payload: dict) -> None:
+def _post_to_client(client_doc, endpoint: str, payload: dict) -> tuple[bool, str]:
     """POST a payload to a client's whitelisted endpoint with provider auth.
 
     Shared forwarder used by every webhook path (WhatsApp, leadgen,
-    future Social feed/comments). Auth is the inter-service
+    Social feed/comments, DMs). Auth is the inter-service
     X-MSuite-Provider-Key / -Secret pair that the client's
     `validate_provider_auth()` checks.
+
+    Returns (ok, error_summary). Never logs auth headers or tokens.
     """
     import requests
     from msuite.services.client_service import make_auth_headers
@@ -464,27 +494,112 @@ def _post_to_client(client_doc, endpoint: str, payload: dict) -> None:
             timeout=15,
         )
         if resp.status_code != 200:
-            # Client returned non-200 — surface so client-side bugs are
-            # diagnosable without enabling debug logs everywhere.
+            error = f"HTTP {resp.status_code}: {resp.text[:300]}"
             logger.warning(
-                f"Client forward to {endpoint} returned {resp.status_code} "
-                f"({client_doc.name}): {resp.text[:200]}"
+                f"Client forward to {endpoint} returned {resp.status_code} ({client_doc.name})"
             )
+            return False, error
         # Success path is intentionally silent — every healthy webhook
         # would otherwise write a log line and dwarf the signal we care
         # about (failures + drops).
+        return True, ""
     except Exception as e:
         logger.error(f"Failed to forward to {client_doc.name} {endpoint}: {e}")
+        return False, str(e)[:500]
+
+
+# Retry schedule: 2^attempts minutes → 2m, 4m, 8m, …, ~4h; 8 attempts
+# spans roughly half a day of client outage before the record goes Failed.
+MAX_FORWARD_ATTEMPTS = 8
+
+
+def _delivery_idempotency_key(client_name: str, endpoint: str, payload: dict) -> str:
+    raw = f"{client_name}|{endpoint}|{json.dumps(payload, sort_keys=True)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def forward_webhook_job(client_name: str, endpoint: str, payload: dict) -> None:
     """Enqueued background job to forward a webhook payload to the client.
 
-    By running this in the background, the webhook handler returns 200 OK
-    immediately to Meta, preventing timeout retries.
+    Durable: every forward is backed by an MSuite Webhook Delivery record
+    so a client outage never permanently loses an event the provider has
+    already ACKed to Meta. Idempotent on (client, endpoint, payload) —
+    Meta retries and duplicate enqueues collapse onto one record.
     """
-    client_doc = frappe.get_doc("MSuite Client", client_name)
-    _post_to_client(client_doc, endpoint, payload)
+    key = _delivery_idempotency_key(client_name, endpoint, payload)
+    existing = frappe.db.get_value("MSuite Webhook Delivery", {"idempotency_key": key}, "name")
+    if existing:
+        return
+    try:
+        delivery = frappe.get_doc(
+            {
+                "doctype": "MSuite Webhook Delivery",
+                "client": client_name,
+                "endpoint": endpoint,
+                "status": "Queued",
+                "payload": json.dumps(payload),
+                "idempotency_key": key,
+            }
+        ).insert(ignore_permissions=True)
+        frappe.db.commit()
+    except frappe.DuplicateEntryError:
+        return
+    deliver_webhook(delivery.name)
+
+
+def deliver_webhook(delivery_name: str) -> None:
+    """Attempt one delivery of a queued webhook forward."""
+    delivery = frappe.get_doc("MSuite Webhook Delivery", delivery_name)
+    if delivery.status == "Delivered":
+        return
+    client_doc = frappe.get_doc("MSuite Client", delivery.client)
+    if client_doc.status != "Active":
+        delivery.status = "Failed"
+        delivery.last_error = f"Client is {client_doc.status}"
+        delivery.save(ignore_permissions=True)
+        return
+
+    ok, error = _post_to_client(client_doc, delivery.endpoint, json.loads(delivery.payload))
+    delivery.attempts = (delivery.attempts or 0) + 1
+    if ok:
+        delivery.status = "Delivered"
+        delivery.delivered_at = frappe.utils.now()
+        delivery.last_error = ""
+    else:
+        delivery.last_error = error
+        if delivery.attempts >= MAX_FORWARD_ATTEMPTS:
+            delivery.status = "Failed"
+            frappe.log_error(
+                title="Webhook forward exhausted",
+                message=f"Delivery {delivery.name} to {delivery.client} "
+                f"({delivery.endpoint}) failed after {delivery.attempts} attempts.\n"
+                f"Last error: {error}",
+            )
+        else:
+            delivery.status = "Queued"
+            delivery.next_attempt_at = frappe.utils.add_to_date(
+                frappe.utils.now(), minutes=2**delivery.attempts
+            )
+    delivery.save(ignore_permissions=True)
+
+
+def retry_pending_webhook_deliveries() -> None:
+    """Scheduler entry: re-attempt queued deliveries whose backoff elapsed."""
+    names = frappe.get_all(
+        "MSuite Webhook Delivery",
+        filters={
+            "status": "Queued",
+            "attempts": [">", 0],
+            "next_attempt_at": ["<=", frappe.utils.now()],
+        },
+        pluck="name",
+        limit_page_length=200,
+    )
+    for name in names:
+        try:
+            deliver_webhook(name)
+        except Exception:
+            logger.exception(f"Webhook delivery retry failed for {name}")
 
 
 def _validate_meta_signature(platform: str) -> bool:

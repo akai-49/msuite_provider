@@ -30,6 +30,7 @@ from .meta_base import (
     build_facebook_login_url,
     discover_businesses,
     exchange_code_for_long_lived_token,
+    inspect_debug_token,
     upsert_businesses_as_auth_accounts,
 )
 
@@ -40,6 +41,11 @@ META_ADS_SCOPES = [
     "ads_read",
     "business_management",
 ]
+
+
+# Meta Ad Account status codes
+# 1 = ACTIVE, 2 = DISABLED, 3 = UNSETTLED, 7 = PENDING_RISK_REVIEW, 100 = CLOSURE_PENDING, 101 = CLOSED
+DISABLED_ACCOUNT_STATUSES = {2, 100, 101}
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +60,10 @@ def build_auth_url(client_name: str, state: str) -> str:
 
 def exchange_token(code: str, state_data: dict) -> dict:
     """Code → long-lived user token (shared with meta_social)."""
-    return exchange_code_for_long_lived_token(code)
+    token_data = exchange_code_for_long_lived_token(code)
+    if state_data:
+        token_data["state_data"] = state_data
+    return token_data
 
 
 def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
@@ -62,12 +71,33 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     user_token = token_data["access_token"]
     expires_in = token_data.get("expires_in", LONG_LIVED_TOKEN_TTL)
     app_name   = token_data.get("app_name", "")
+    state_data = token_data.get("state_data") or {}
 
-    businesses   = discover_businesses(user_token)
+    target_business_id = state_data.get("business_id") or state_data.get("target_business_id")
+
+    # Inspect token to check if user selected specific ad accounts / assets in Meta's OAuth dialog
+    debug_info = inspect_debug_token(user_token)
+    granular_target_ids = debug_info.get("target_ids") or set()
+
+    businesses = discover_businesses(user_token)
+
+    # If user selected specific businesses in Meta's consent popup, filter business list
+    if granular_target_ids:
+        matching_biz = [b for b in businesses if str(b.get("id")) in granular_target_ids]
+        if matching_biz:
+            businesses = matching_biz
+
     biz_auth_map = upsert_businesses_as_auth_accounts(client_name, businesses)
 
     return _discover_ad_accounts(
-        client_name, user_token, app_name, expires_in, businesses, biz_auth_map
+        client_name,
+        user_token,
+        app_name,
+        expires_in,
+        businesses,
+        biz_auth_map,
+        target_business_id=target_business_id,
+        granular_target_ids=granular_target_ids,
     )
 
 
@@ -83,77 +113,134 @@ def _discover_ad_accounts(
     expires_in: int,
     businesses: list[dict],
     biz_auth_map: dict[str, str],
+    target_business_id: str | None = None,
+    granular_target_ids: set[str] | None = None,
 ) -> list[dict]:
-    """Upsert every Ad Account the user can access + push to client.
-
-    If the user has Meta Businesses we iterate `/{biz}/owned_ad_accounts`
-    per business so each Ad Account is linked to its parent auth account.
-    Otherwise we fall back to `/me/adaccounts` for personal-tier users.
-    """
+    """Upsert active Ad Accounts the user can access + push to client site."""
     connected: list[dict] = []
+    # Key: account_id -> {account_id, name, currency, timezone_name, business_id, business_name}
+    discovered: dict[str, dict] = {}
 
-    sources = _ad_account_sources(businesses)
-    for url, biz_id, biz_name in sources:
+    def _collect_from_url(url: str, src_biz_id: str, src_biz_name: str):
         try:
             resp = requests.get(
                 url,
                 params={
                     "access_token": user_token,
-                    "fields":       "account_id,name,currency,timezone_name",
+                    "fields":       "account_id,name,currency,timezone_name,business,account_status",
                 },
                 timeout=30,
             )
+            if resp.status_code != 200:
+                logger.warning(f"Ad account discovery at {url} returned HTTP {resp.status_code}: {resp.text}")
+                return
         except Exception as e:
             logger.error(f"Failed to discover ad accounts at {url}: {e}")
-            continue
+            return
 
         for ad in resp.json().get("data", []):
             account_id   = ad.get("account_id", "")
             account_name = ad.get("name", "")
+            status       = ad.get("account_status")
+
             if not account_id:
                 continue
 
-            ca_name = upsert_connected_account(
-                client_name, Platform.META_ADS, account_id, {
-                    "display_name":  account_name,
-                    "auth_account":  biz_auth_map.get(biz_id) if biz_id else None,
-                    "access_token":  user_token,
-                    "token_type":    "User Token",
-                    "msuite_app":    app_name,
-                    "token_expiry":  add_to_date(now(), seconds=expires_in),
-                },
-            )
-            upsert_meta_ads_account(ca_name, {
-                "ad_account_id":   account_id,
-                "ad_account_name": account_name,
-                "currency":        ad.get("currency", ""),
-                "timezone":        ad.get("timezone_name", ""),
-            })
-            connected.append({"platform": "Meta Ads", "name": account_name})
+            # Skip disabled or closed ad accounts
+            if status in DISABLED_ACCOUNT_STATUSES:
+                logger.info(f"Skipping ad account {account_id} ({account_name}): status {status} is disabled/closed.")
+                continue
 
-            push_account_to_client(client_name, Platform.META_ADS, {
-                "ad_account_id":   account_id,
-                "ad_account_name": account_name,
-                "access_token":    user_token,
-                "currency":        ad.get("currency", ""),
-                "timezone":        ad.get("timezone_name", ""),
-                "business_id":     biz_id,
-                "business_name":   biz_name,
-            })
+            ad_biz = ad.get("business") or {}
+            biz_id = src_biz_id or str(ad_biz.get("id") or "")
+            biz_name = src_biz_name or ad_biz.get("name") or ""
+
+            # If user selected specific ad accounts/businesses in Meta's consent popup, restrict to those IDs
+            if granular_target_ids:
+                matches_account = (
+                    account_id in granular_target_ids or
+                    f"act_{account_id}" in granular_target_ids
+                )
+                matches_business = bool(biz_id and biz_id in granular_target_ids)
+                if not (matches_account or matches_business):
+                    logger.info(f"Skipping ad account {account_id} ({account_name}): not selected by user in Meta consent dialog.")
+                    continue
+
+            # If target business specified, filter out ad accounts from other businesses
+            if target_business_id and biz_id and biz_id != target_business_id:
+                continue
+
+            if account_id not in discovered:
+                discovered[account_id] = {
+                    "account_id":      account_id,
+                    "account_name":    account_name,
+                    "currency":        ad.get("currency", ""),
+                    "timezone_name":   ad.get("timezone_name", ""),
+                    "business_id":     biz_id,
+                    "business_name":   biz_name,
+                }
+            else:
+                # Enrich business metadata if previously missing
+                if biz_id and not discovered[account_id]["business_id"]:
+                    discovered[account_id]["business_id"] = biz_id
+                    discovered[account_id]["business_name"] = biz_name
+
+    # 1. First attempt: Query owned_ad_accounts for each business
+    for biz in businesses:
+        biz_id = biz.get("id")
+        biz_name = biz.get("name", "")
+        if biz_id:
+            url = f"{GRAPH_API_BASE}/{biz_id}/owned_ad_accounts"
+            _collect_from_url(url, str(biz_id), biz_name)
+
+    # 2. Fallback: If no owned ad accounts found for the businesses, query client_ad_accounts & /me/adaccounts
+    if not discovered:
+        for biz in businesses:
+            biz_id = biz.get("id")
+            biz_name = biz.get("name", "")
+            if biz_id:
+                url = f"{GRAPH_API_BASE}/{biz_id}/client_ad_accounts"
+                _collect_from_url(url, str(biz_id), biz_name)
+
+        if not discovered:
+            url = f"{GRAPH_API_BASE}/me/adaccounts"
+            _collect_from_url(url, "", "")
+
+    # Upsert discovered active accounts
+    for acc in discovered.values():
+        account_id   = acc["account_id"]
+        account_name = acc["account_name"]
+        biz_id       = acc["business_id"]
+        biz_name     = acc["business_name"]
+
+        ca_name = upsert_connected_account(
+            client_name, Platform.META_ADS, account_id, {
+                "display_name":  account_name,
+                "auth_account":  biz_auth_map.get(biz_id) if biz_id else None,
+                "access_token":  user_token,
+                "token_type":    "User Token",
+                "msuite_app":    app_name,
+                "token_expiry":  add_to_date(now(), seconds=expires_in),
+            },
+        )
+        upsert_meta_ads_account(ca_name, {
+            "ad_account_id":   account_id,
+            "ad_account_name": account_name,
+            "currency":        acc["currency"],
+            "timezone":        acc["timezone_name"],
+        })
+        connected.append({"platform": "Meta Ads", "name": account_name})
+
+        push_account_to_client(client_name, Platform.META_ADS, {
+            "ad_account_id":   account_id,
+            "ad_account_name": account_name,
+            "access_token":    user_token,
+            "currency":        acc["currency"],
+            "timezone":        acc["timezone_name"],
+            "business_id":     biz_id,
+            "business_name":   biz_name,
+        })
 
     return connected
 
 
-def _ad_account_sources(businesses: list[dict]) -> list[tuple[str, str, str]]:
-    """Build the list of `(url, biz_id, biz_name)` to query for Ad Accounts.
-
-    Business-tier users get one query per Meta Business. Personal-tier users
-    fall back to `/me/adaccounts` with empty biz fields.
-    """
-    if not businesses:
-        return [(f"{GRAPH_API_BASE}/me/adaccounts", "", "")]
-
-    return [
-        (f"{GRAPH_API_BASE}/{biz['id']}/owned_ad_accounts", biz["id"], biz.get("name", ""))
-        for biz in businesses
-    ]

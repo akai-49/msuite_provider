@@ -862,3 +862,61 @@ def refresh_account_token(client_name: str, platform: str, account_id: str) -> d
     except Exception as e:
         logger.warning(f"On-demand token refresh failed for {client_name}/{platform}/{account_id}: {e}")
         return error_response(ErrorCode.INVALID_INPUT, str(e))
+
+
+@frappe.whitelist(allow_guest=True)
+def disconnect_account_for_client(
+    client_name: str,
+    platform: str = "",
+    account_id: str = "",
+    display_name: str = "",
+    account_name: str = "",
+) -> dict:
+    """Client-initiated account disconnection notification.
+
+    Marks matching `MSuite Connected Account` rows for this client as `Disconnected`.
+    """
+    try:
+        client_doc = require_msuite_client_auth(client_name)
+        filters = {"client": client_doc.name}
+        if platform:
+            filters["platform"] = _CLIENT_PLATFORM_ALIASES.get(platform, platform)
+
+        matching_ca_names = []
+        if account_id:
+            matching_ca_names = frappe.get_all(
+                "MSuite Connected Account",
+                filters={**filters, "account_id": account_id},
+                pluck="name",
+            )
+
+        if not matching_ca_names and display_name:
+            matching_ca_names = frappe.get_all(
+                "MSuite Connected Account",
+                filters={**filters, "display_name": display_name},
+                pluck="name",
+            )
+
+        if not matching_ca_names and account_name:
+            matching_ca_names = frappe.get_all(
+                "MSuite Connected Account",
+                filters={**filters, "display_name": account_name},
+                pluck="name",
+            )
+
+        updated_count = 0
+        from msuite.constants import ConnectedAccountStatus
+        for ca_name in matching_ca_names:
+            ca = frappe.get_doc("MSuite Connected Account", ca_name)
+            ca.status = ConnectedAccountStatus.DISCONNECTED
+            ca.needs_reauth = 0
+            ca.save(ignore_permissions=True)
+            updated_count += 1
+
+        frappe.db.commit()
+        return success_response({"updated": updated_count, "status": ConnectedAccountStatus.DISCONNECTED})
+    except frappe.AuthenticationError as e:
+        return error_response(ErrorCode.PERMISSION_DENIED, str(e))
+    except Exception as e:
+        logger.error(f"disconnect_account_for_client failed: {e}", exc_info=True)
+        return error_response(ErrorCode.INVALID_INPUT, str(e))

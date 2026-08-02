@@ -36,12 +36,15 @@ from .meta_base import (
     build_facebook_login_url,
     discover_businesses,
     exchange_code_for_long_lived_token,
+    inspect_debug_token,
     upsert_businesses_as_auth_accounts,
 )
 
 logger = frappe.logger(MSUITE_LOGGER_NAME)
 
 META_SOCIAL_SCOPES = [
+    # ── Business management scope for Business Suite assets ──────────
+    "business_management",         # access Business Suite Pages + Accounts
     # ── Page-level scopes ─────────────────────────────────────────────
     "pages_manage_posts",          # publish organic posts
     "pages_read_engagement",       # read posts + Page-authored comments
@@ -64,9 +67,16 @@ META_SOCIAL_SCOPES = [
 
 # Webhook fields we want delivered for each Page. Sent once per Page in
 # `_subscribe_page_to_webhooks` immediately after upserting the Connected
-# Account. Same field list covers BOTH FB DM/comment events on the `page`
-# object AND IG DM/comment events on the linked `instagram` object — Meta
-# subscribes IG via the Page binding when the IG account is linked.
+# Account. Subscribing the Page also delivers the linked Instagram
+# account's messaging events (they arrive on the `instagram` object).
+#
+# EVERY name here must be valid for the `page` object. Meta validates the
+# whole list atomically: one unrecognised field rejects the entire
+# `subscribed_apps` call with "(#100) Param subscribed_fields[n] must be
+# one of {...}", leaving the Page subscribed to NOTHING and the tenant
+# receiving no webhooks at all. That is exactly what `comments` did here —
+# it is an Instagram-object field configured in the App Dashboard, not a
+# Page field — so it silently took down Page DM delivery with it.
 PAGE_WEBHOOK_FIELDS = (
     # Facebook Page DMs + delivery confirmations
     "messages",
@@ -78,6 +88,8 @@ PAGE_WEBHOOK_FIELDS = (
     # Facebook Page comments / posts / likes (item="comment" is the
     # comment event; reactions + posts share the same `feed` field).
     "feed",
+    # Meta Lead Gen Form submissions
+    "leadgen",
 )
 
 
@@ -97,22 +109,26 @@ def exchange_token(code: str, state_data: dict) -> dict:
 
 
 def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
-    """Discover Facebook Pages + linked Instagram Business accounts."""
+    """Discover Facebook Pages + linked Instagram Business accounts across personal and Business Suite portfolios."""
     user_token = token_data["access_token"]
     expires_in = token_data.get("expires_in", LONG_LIVED_TOKEN_TTL)
     app_name   = token_data.get("app_name", "")
+
+    # Inspect debug token to get granular_target_ids selected by the user in Meta consent popup
+    debug_info = inspect_debug_token(user_token)
+    granular_target_ids = debug_info.get("target_ids") or set()
 
     businesses   = discover_businesses(user_token)
     biz_auth_map = upsert_businesses_as_auth_accounts(client_name, businesses)
     page_biz_map = _build_page_business_map(businesses, user_token, biz_auth_map)
 
     return _discover_pages_and_instagram(
-        client_name, user_token, app_name, expires_in, page_biz_map
+        client_name, user_token, app_name, expires_in, page_biz_map, businesses, granular_target_ids=granular_target_ids
     )
 
 
 # ---------------------------------------------------------------------------
-# Page ↔ Business mapping
+# Page ↔ Business mapping & discovery
 # ---------------------------------------------------------------------------
 
 
@@ -121,36 +137,59 @@ def _build_page_business_map(
     user_token: str,
     biz_auth_map: dict[str, str],
 ) -> dict[str, dict]:
-    """Map `page_name` → `{business_id, business_name, auth_account}`.
+    """Map `page_id` and `page_name` → `{business_id, business_name, auth_account}`.
 
-    Uses `/{biz_id}/owned_pages` for grouping only. Page access tokens
-    must still come from `/me/accounts` (the owned_pages endpoint does
-    not return them).
+    Queries both `owned_pages` and `client_pages` per Business Suite portfolio.
     """
     page_biz_map: dict[str, dict] = {}
     for biz in businesses:
-        try:
-            resp = requests.get(
-                f"{GRAPH_API_BASE}/{biz['id']}/owned_pages",
-                params={"access_token": user_token, "fields": "id,name"},
-                timeout=30,
-            )
-            for p in resp.json().get("data", []):
-                page_name = p.get("name", "")
-                if page_name:
-                    page_biz_map[page_name] = {
-                        "business_id":   biz["id"],
+        biz_id = biz.get("id")
+        if not biz_id:
+            continue
+        for endpoint in ("owned_pages", "client_pages"):
+            try:
+                resp = requests.get(
+                    f"{GRAPH_API_BASE}/{biz_id}/{endpoint}",
+                    params={
+                        "access_token": user_token,
+                        "fields":       "id,name,access_token,category,picture",
+                        "limit":        200,
+                    },
+                    timeout=30,
+                )
+                for p in resp.json().get("data", []):
+                    info = {
+                        "business_id":   biz_id,
                         "business_name": biz.get("name", ""),
-                        "auth_account":  biz_auth_map.get(biz["id"]),
+                        "auth_account":  biz_auth_map.get(biz_id),
+                        "page_data":     p,
                     }
-        except Exception as e:
-            logger.warning(f"owned_pages lookup failed for biz {biz['id']}: {e}")
+                    if p.get("id"):
+                        page_biz_map[p["id"]] = info
+                    if p.get("name"):
+                        page_biz_map[p["name"]] = info
+            except Exception as e:
+                logger.warning(f"{endpoint} lookup failed for biz {biz_id}: {e}")
     return page_biz_map
 
 
-# ---------------------------------------------------------------------------
-# Page + Instagram discovery
-# ---------------------------------------------------------------------------
+def _fetch_page_detail(page_id: str, user_token: str) -> dict | None:
+    """Fetch individual Page details including access_token directly from Page node."""
+    try:
+        resp = requests.get(
+            f"{GRAPH_API_BASE}/{page_id}",
+            params={
+                "access_token": user_token,
+                "fields":       "id,name,access_token,category,picture",
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        if data.get("id") and data.get("access_token"):
+            return data
+    except Exception as e:
+        logger.warning(f"Page detail fetch failed for page {page_id}: {e}")
+    return None
 
 
 def _discover_pages_and_instagram(
@@ -159,10 +198,14 @@ def _discover_pages_and_instagram(
     app_name: str,
     expires_in: int,
     page_biz_map: dict,
+    businesses: list[dict],
+    granular_target_ids: set[str] | None = None,
 ) -> list[dict]:
-    """Discover Facebook Pages via `/me/accounts` and their linked IG."""
+    """Discover Facebook Pages via `/me/accounts`, `/{biz}/owned_pages`, `/{biz}/client_pages` and their linked IG."""
     connected: list[dict] = []
+    pages_dict: dict[str, dict] = {}
 
+    # 1. Fetch personal / direct pages from /me/accounts
     try:
         resp = requests.get(
             f"{GRAPH_API_BASE}/me/accounts",
@@ -173,64 +216,103 @@ def _discover_pages_and_instagram(
             },
             timeout=30,
         )
-
         for page in resp.json().get("data", []):
-            page_id    = page["id"]
-            page_name  = page.get("name", "")
-            page_token = page.get("access_token", "")
-            # Prefer the stable public redirect over the signed CDN URL
-            # in `picture.data.url` — the signed URL expires after a few
-            # days, leaving broken avatars on the client. The redirect
-            # endpoint is public for Pages and never expires.
-            avatar_url = f"https://graph.facebook.com/{page_id}/picture?type=large"
-
-            biz_info     = page_biz_map.get(page_name, {})
-            biz_id       = biz_info.get("business_id", "")
-            biz_name     = biz_info.get("business_name", "")
-            auth_account = biz_info.get("auth_account")
-
-            ca_name = upsert_connected_account(
-                client_name, Platform.FACEBOOK, page_id, {
-                    "display_name":  page_name,
-                    "auth_account":  auth_account,
-                    "access_token":  page_token,
-                    "token_type":    "Page Token",
-                    "msuite_app":    app_name,
-                    "token_expiry":  add_to_date(now(), seconds=expires_in),
-                },
-            )
-            upsert_facebook_account(ca_name, {
-                "page_id":       page_id,
-                "page_name":     page_name,
-                "page_category": page.get("category", ""),
-            })
-            connected.append({"platform": "Facebook", "name": page_name})
-
-            push_account_to_client(client_name, Platform.FACEBOOK, {
-                "page_id":           page_id,
-                "page_name":         page_name,
-                "page_access_token": page_token,
-                "business_id":       biz_id,
-                "business_name":     biz_name,
-                "avatar_url":        avatar_url,
-            })
-
-            # Subscribe THIS Page to our webhook fields. Failure is logged
-            # but doesn't abort the OAuth flow — the customer's account is
-            # still connected for reads, just won't get realtime DM/comment
-            # events until we retry. `_subscribe_page_to_webhooks` records
-            # state on Connected Account for that retry.
-            _subscribe_page_to_webhooks(ca_name, page_id, page_token)
-
-            ig_result = _discover_instagram_for_page(
-                client_name, page_id, page_name, page_token, user_token,
-                app_name, expires_in, biz_id, auth_account,
-            )
-            if ig_result:
-                connected.append(ig_result)
-
+            if page.get("id"):
+                pages_dict[page["id"]] = page
     except Exception as e:
-        logger.error(f"Failed to discover Facebook Pages: {e}")
+        logger.error(f"Failed to discover personal Facebook Pages (/me/accounts): {e}")
+
+    # 2. Collect pages from Business Manager / Business Suite (owned_pages & client_pages)
+    for biz in businesses:
+        biz_id = biz.get("id")
+        if not biz_id:
+            continue
+        for endpoint in ("owned_pages", "client_pages"):
+            try:
+                resp = requests.get(
+                    f"{GRAPH_API_BASE}/{biz_id}/{endpoint}",
+                    params={
+                        "access_token": user_token,
+                        "fields":       "id,name,access_token,category,picture",
+                        "limit":        200,
+                    },
+                    timeout=30,
+                )
+                for page in resp.json().get("data", []):
+                    page_id = page.get("id")
+                    if page_id and page_id not in pages_dict:
+                        pages_dict[page_id] = page
+            except Exception as e:
+                logger.warning(f"Failed to fetch {endpoint} for business {biz_id}: {e}")
+
+    # 3. Process all unique discovered Pages
+    for page_id, page in pages_dict.items():
+        page_name  = page.get("name", "")
+        page_token = page.get("access_token", "")
+
+        biz_info     = page_biz_map.get(page_id) or page_biz_map.get(page_name) or {}
+        biz_id       = biz_info.get("business_id", "")
+        biz_name     = biz_info.get("business_name", "")
+
+        # If user selected specific pages/businesses in Meta's consent popup, restrict to those IDs
+        if granular_target_ids:
+            matches_page = page_id in granular_target_ids
+            matches_business = bool(biz_id and biz_id in granular_target_ids)
+            if not (matches_page or matches_business):
+                logger.info(f"Skipping Page {page_name} ({page_id}): not selected by user in Meta consent dialog.")
+                continue
+
+        if not page_token:
+            page_detail = _fetch_page_detail(page_id, user_token)
+            if page_detail and page_detail.get("access_token"):
+                page_token = page_detail["access_token"]
+                page = page_detail
+
+        if not page_token:
+            logger.warning(f"Skipping Page {page_name} ({page_id}): no access_token available")
+            continue
+
+        avatar_url = f"https://graph.facebook.com/{page_id}/picture?type=large"
+
+        biz_info     = page_biz_map.get(page_id) or page_biz_map.get(page_name) or {}
+        biz_id       = biz_info.get("business_id", "")
+        biz_name     = biz_info.get("business_name", "")
+        auth_account = biz_info.get("auth_account")
+
+        ca_name = upsert_connected_account(
+            client_name, Platform.FACEBOOK, page_id, {
+                "display_name":  page_name,
+                "auth_account":  auth_account,
+                "access_token":  page_token,
+                "token_type":    "Page Token",
+                "msuite_app":    app_name,
+                "token_expiry":  add_to_date(now(), seconds=expires_in),
+            },
+        )
+        upsert_facebook_account(ca_name, {
+            "page_id":       page_id,
+            "page_name":     page_name,
+            "page_category": page.get("category", ""),
+        })
+        connected.append({"platform": "Facebook", "name": page_name})
+
+        push_account_to_client(client_name, Platform.FACEBOOK, {
+            "page_id":           page_id,
+            "page_name":         page_name,
+            "page_access_token": page_token,
+            "business_id":       biz_id,
+            "business_name":     biz_name,
+            "avatar_url":        avatar_url,
+        })
+
+        _subscribe_page_to_webhooks(ca_name, page_id, page_token)
+
+        ig_result = _discover_instagram_for_page(
+            client_name, page_id, page_name, page_token, user_token,
+            app_name, expires_in, biz_id, auth_account,
+        )
+        if ig_result:
+            connected.append(ig_result)
 
     return connected
 
@@ -356,8 +438,8 @@ def _subscribe_page_to_webhooks(connected_account_name: str,
         logger.warning(f"Page {page_id} subscription network error: {e}")
 
     # Persist outcome on the Connected Account — never raises; failed
-    # subscriptions go into `last_subscription_error` so a scheduler /
-    # admin tool can retry without re-running full OAuth.
+    # subscriptions go into `last_subscription_error` so the scheduled
+    # `retry_failed_page_subscriptions` job can retry without full OAuth.
     try:
         updates: dict = {"last_subscription_error": err_msg or ""}
         if success_fields:
@@ -371,3 +453,35 @@ def _subscribe_page_to_webhooks(connected_account_name: str,
         logger.error(
             f"Could not persist subscription state on {connected_account_name}: {e}"
         )
+
+
+def retry_failed_page_subscriptions() -> None:
+    """Scheduled repair: re-run `subscribed_apps` for every Active
+    Facebook Connected Account whose last subscription attempt failed.
+
+    Picks up automatically after a token refresh — the retry uses the
+    account's CURRENT decrypted token, so a subscription that failed on
+    an expired token heals on the next run without re-OAuth.
+    """
+    from frappe.utils.password import get_decrypted_password
+
+    rows = frappe.get_all(
+        "MSuite Connected Account",
+        filters={
+            "platform": "Facebook",
+            "status": "Active",
+            "last_subscription_error": ["!=", ""],
+        },
+        fields=["name", "account_id"],
+        limit_page_length=100,
+    )
+    for row in rows:
+        token = get_decrypted_password(
+            "MSuite Connected Account", row.name, "access_token", raise_exception=False
+        )
+        if not token:
+            continue
+        try:
+            _subscribe_page_to_webhooks(row.name, row.account_id, token)
+        except Exception as e:
+            logger.warning(f"Subscription repair failed for {row.name}: {e}")

@@ -210,3 +210,47 @@ def upsert_businesses_as_auth_accounts(
         })
         mapping[biz["id"]] = auth_name
     return mapping
+
+
+# ---------------------------------------------------------------------------
+# Debug Token / Granular Scope inspection
+# ---------------------------------------------------------------------------
+
+
+def inspect_debug_token(user_token: str) -> dict:
+    """Call debug_token to inspect granted permissions and granular_scopes target_ids.
+
+    When users select specific pages/ad accounts/businesses in Meta's OAuth dialog,
+    Meta returns their IDs in `granular_scopes[].target_ids`.
+
+    Returns dict with:
+      "data": raw response dict from debug_token
+      "target_ids": set of string asset IDs explicitly selected by the user
+    """
+    try:
+        app = get_msuite_app(META_APP_PLATFORM)
+        app_secret = app.get_password("app_secret")
+        resp = requests.get(
+            f"{GRAPH_API_BASE}/debug_token",
+            params={
+                "input_token":  user_token,
+                "access_token": f"{app.app_id}|{app_secret}",
+            },
+            timeout=30,
+        )
+        data = resp.json().get("data", {})
+        target_ids: set[str] = set()
+        for item in data.get("granular_scopes", []):
+            for tid in item.get("target_ids", []):
+                if tid:
+                    tid_str = str(tid)
+                    target_ids.add(tid_str)
+                    if tid_str.isdigit():
+                        target_ids.add(f"act_{tid_str}")
+                    elif tid_str.startswith("act_"):
+                        target_ids.add(tid_str[4:])
+        return {"data": data, "target_ids": target_ids}
+    except Exception as e:
+        logger.error(f"debug_token inspection failed: {e}")
+        return {"data": {}, "target_ids": set()}
+

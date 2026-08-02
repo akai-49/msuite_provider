@@ -35,6 +35,8 @@ from msuite.exceptions import OAuthError
 # Platform handler imports
 from . import google
 from . import linkedin
+from . import linkedin_page
+from . import linkedin_profile
 from . import meta_ads
 from . import meta_all
 from . import meta_catalogue
@@ -56,7 +58,9 @@ _AUTH_URL_BUILDERS = {
     "meta_ads":    meta_ads.build_auth_url,
     "meta_all":    meta_all.build_auth_url,
     "meta_catalogue": meta_catalogue.build_auth_url,
-    "linkedin":    linkedin.build_auth_url,
+    "linkedin":          linkedin_page.build_auth_url,
+    "linkedin_page":     linkedin_page.build_auth_url,
+    "linkedin_profile":  linkedin_profile.build_auth_url,
     "twitter":     twitter.build_auth_url,
     "google":      google.build_auth_url,
     "google_youtube": google.build_auth_url,
@@ -69,7 +73,9 @@ _TOKEN_EXCHANGERS = {
     "meta_ads":    meta_ads.exchange_token,
     "meta_all":    meta_all.exchange_token,
     "meta_catalogue": meta_catalogue.exchange_token,
-    "linkedin":    linkedin.exchange_token,
+    "linkedin":          linkedin_page.exchange_token,
+    "linkedin_page":     linkedin_page.exchange_token,
+    "linkedin_profile":  linkedin_profile.exchange_token,
     "twitter":     twitter.exchange_token,
     "google":      google.exchange_token,
     "google_youtube": google.exchange_token,
@@ -82,7 +88,9 @@ _ACCOUNT_DISCOVERERS = {
     "meta_ads":    meta_ads.discover_accounts,
     "meta_all":    meta_all.discover_accounts,
     "meta_catalogue": meta_catalogue.discover_accounts,
-    "linkedin":    linkedin.discover_accounts,
+    "linkedin":          linkedin_page.discover_accounts,
+    "linkedin_page":     linkedin_page.discover_accounts,
+    "linkedin_profile":  linkedin_profile.discover_accounts,
     "twitter":     twitter.discover_accounts,
     "google":      google.discover_accounts,
     "google_youtube": google.discover_accounts,
@@ -92,22 +100,15 @@ _ACCOUNT_DISCOVERERS = {
 
 _TOKEN_REFRESHERS = {
     # Keys MUST match `MSuite Connected Account.platform` field options.
-    #
-    # Meta long-lived USER tokens (60-day) get extended in-place via
-    # `fb_exchange_token` — see `meta_base.refresh_long_lived_token`.
-    # The same user token underlies Facebook Pages + Instagram Business
-    # + Meta Ads, so all three share one refresher.
     "Facebook":  meta_base.refresh_long_lived_token,
     "Instagram": meta_base.refresh_long_lived_token,
     "Meta Ads":  meta_base.refresh_long_lived_token,
     "Meta Catalogue": meta_base.refresh_long_lived_token,
-    "LinkedIn":  linkedin.refresh_token,
+    "LinkedIn":  linkedin_page.refresh_token,
     "Twitter":   twitter.refresh_token_fn,
     "YouTube":   google.refresh_token_fn,
     "Google Ads": google.refresh_token_fn,
     "Gmail":      google.refresh_token_fn,
-    # WhatsApp uses System User tokens — perpetual; no refresh needed.
-    # TikTok refresher pending TikTok publisher landing on the provider.
 }
 
 

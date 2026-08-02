@@ -24,28 +24,32 @@ def get_msuite_app(platform: str):
     """
     Fetch the active MSuite App record for a platform.
 
-    Args:
-        platform: Platform name as in MSuite App.platform field
-                  (e.g., "Meta WhatsApp", "Meta Social", "Google")
-
-    Returns:
-        MSuite App document
-
-    Raises:
-        OAuthError: if no active app is configured
+    Normalizes platform key (e.g., "linkedin_page" -> "LinkedIn Page") and matches
+    against document name, app_name, or platform field.
     """
-    app_name = frappe.db.get_value(
-        "MSuite App",
-        {"platform": platform, "is_active": 1},
-        "name",
-    )
-    if not app_name:
-        frappe.throw(
-            f"No active MSuite App configured for {platform}. "
-            f"Create one in MSuite App.",
-            OAuthError,
+    if platform.lower() == "linkedin":
+        platform = "LinkedIn Page"
+
+    terms = [
+        platform,
+        platform.replace("_", " "),
+        platform.replace("_", " ").title(),
+        platform.lower(),
+    ]
+    for term in terms:
+        app_name = (
+            frappe.db.get_value("MSuite App", {"name": term, "is_active": 1}, "name")
+            or frappe.db.get_value("MSuite App", {"app_name": term, "is_active": 1}, "name")
+            or frappe.db.get_value("MSuite App", {"platform": term, "is_active": 1}, "name")
         )
-    return frappe.get_doc("MSuite App", app_name)
+        if app_name:
+            return frappe.get_doc("MSuite App", app_name)
+
+    frappe.throw(
+        f"No active MSuite App configured for {platform}. "
+        f"Create one in MSuite App.",
+        OAuthError,
+    )
 
 
 # ── Auth Account (top-level entity) ─────────────────────────────────────
@@ -144,6 +148,24 @@ def upsert_connected_account(
         doc.last_refreshed = now()
         if access_token:
             doc.access_token = access_token
+            # Re-authorising revives the account. Only the OAuth
+            # discover_accounts flows reach this function, and they run
+            # solely because the customer just completed the consent
+            # dialog for this asset — so a fresh token means it is live
+            # again.
+            #
+            # Without this, `status` was set on INSERT only: an account
+            # that had been disconnected (or revoked) stayed
+            # `Disconnected` forever after reconnecting. Everything
+            # downstream looked healthy — token valid, Page subscribed —
+            # but webhook routing filters on `status == "Active"`, so
+            # every inbound event for that asset was silently dropped.
+            # That is exactly how Facebook/Instagram DMs went missing
+            # while WhatsApp (never disconnected) kept working.
+            doc.status = ConnectedAccountStatus.ACTIVE
+            doc.needs_reauth = 0
+            if not doc.connected_at:
+                doc.connected_at = now()
         doc.save(ignore_permissions=True)
         logger.info(f"Updated {platform} account {account_id} for {client_name}")
         return doc.name

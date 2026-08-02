@@ -25,6 +25,18 @@ doc_events = {
 }
 
 scheduler_events = {
+    "cron": {
+        # Webhook forwards that failed transiently (client down / 5xx)
+        # retry on exponential backoff recorded on MSuite Webhook Delivery.
+        "*/5 * * * *": [
+            "msuite.api.v1.webhook.retry_pending_webhook_deliveries",
+        ],
+    },
+    "hourly": [
+        # Re-run failed per-Page webhook subscriptions (e.g. after a
+        # token refresh) so DM/comment events resume without re-OAuth.
+        "msuite.services.oauth.meta_social.retry_failed_page_subscriptions",
+    ],
     "daily": [
         "msuite.scheduled_tasks.daily.expire_trial_grants",
         "msuite.scheduled_tasks.daily.reconcile_customer_groups",

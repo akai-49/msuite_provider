@@ -282,6 +282,7 @@
                 config_id: platform.config_id,
                 response_type: "code",
                 override_default_response_type: true,
+                scope: "whatsapp_business_management,whatsapp_business_messaging",
                 extras: {
                     setup: {},
                     ...(platform.allow_coexistence

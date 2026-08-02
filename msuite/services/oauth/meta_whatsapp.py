@@ -87,16 +87,25 @@ def exchange_code(
     # Step 2: debug_token — get permissions, user_id, WABA IDs
     debug_data = _debug_token(access_token, app_id, app_secret)
 
+    scopes = debug_data.get("scopes", [])
+    if "whatsapp_business_messaging" not in scopes and "whatsapp_business_management" in scopes:
+        logger.warning(
+            f"WhatsApp authorization for client {client_name} is missing whatsapp_business_messaging scope! "
+            f"Granted scopes: {scopes}"
+        )
+
     # Step 3: Determine WABA IDs — prefer session_info (v2) over debug_token
     waba_ids = []
     if session_info and session_info.get("waba_id"):
         waba_ids = [session_info["waba_id"]]
     else:
-        # Extract from granular_scopes
+        # Extract from granular_scopes (whatsapp_business_management or whatsapp_business_messaging)
         for scope in debug_data.get("granular_scopes", []):
-            if scope.get("scope") == "whatsapp_business_management":
-                waba_ids = scope.get("target_ids", [])
-                break
+            if scope.get("scope") in ("whatsapp_business_management", "whatsapp_business_messaging"):
+                target_ids = scope.get("target_ids", [])
+                for tid in target_ids:
+                    if tid not in waba_ids:
+                        waba_ids.append(tid)
 
     if not waba_ids:
         frappe.throw("No WhatsApp Business Accounts found", AccountDiscoveryError)

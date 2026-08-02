@@ -8,7 +8,7 @@
         "details_section", "app_name", "platform", "is_active",
         "credentials_section", "app_id", "app_secret",
         "whatsapp_section", "config_id", "allow_coexistence",
-        "oauth_section", "redirect_uri",
+        "oauth_section", "redirect_uri", "developer_token",
         "ai_calling_section", "ai_backend_url",
         "webhook_section", "webhook_verify_token", "webhook_url",
         "deauthorize_section", "deauthorize_callback_url"
@@ -32,7 +32,7 @@
             "fieldname": "platform",
             "fieldtype": "Select",
             "label": "Platform",
-            "options": "Meta WhatsApp\nMeta Social\nMeta Catalogue\nGoogle\nTikTok\nLinkedIn\nTwitter\nAI Calling",
+            "options": "Meta WhatsApp\nMeta Social\nMeta Catalogue\nGoogle\nTikTok\nLinkedIn Page\nLinkedIn Profile\nTwitter\nAI Calling",
             "reqd": 1,
             "in_list_view": 1
         },
@@ -94,6 +94,13 @@
             "fieldtype": "Data",
             "label": "OAuth Redirect URI",
             "description": "Redirect URI registered with the platform"
+        },
+        {
+            "fieldname": "developer_token",
+            "fieldtype": "Password",
+            "label": "Google Ads Developer Token",
+            "depends_on": "eval:doc.platform=='Google'",
+            "description": "From the Google Ads API Center. Required in addition to app_id/app_secret for any Google Ads (not plain Google OAuth) integration — Google has no per-account equivalent, it's account-independent."
         },
         {
             "fieldname": "ai_calling_section",
