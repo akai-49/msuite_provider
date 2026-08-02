@@ -101,12 +101,12 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     if not person_sub:
         return connected
 
-    auth_name = upsert_auth_account(client_name, "LinkedIn Profile", person_sub, {
+    auth_name = upsert_auth_account(client_name, "LinkedIn", person_sub, {
         "account_name": person_name,
         "profile_picture_url": person_picture,
     })
 
-    ca_name = upsert_connected_account(client_name, Platform.LINKEDIN, person_sub, {
+    ca_name = upsert_connected_account(client_name, Platform.LINKEDIN_PROFILE, person_sub, {
         "display_name": person_name,
         "auth_account": auth_name,
         "access_token": token,
@@ -115,7 +115,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
         "token_expiry": add_to_date(now(), seconds=expires_in),
     })
 
-    push_account_to_client(client_name, Platform.LINKEDIN, {
+    push_account_to_client(client_name, Platform.LINKEDIN_PROFILE, {
         "author_urn": f"urn:li:person:{person_sub}",
         "display_name": person_name,
         "access_token": token,

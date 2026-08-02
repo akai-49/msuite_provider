@@ -139,35 +139,45 @@ def _build_page_business_map(
 ) -> dict[str, dict]:
     """Map `page_id` and `page_name` → `{business_id, business_name, auth_account}`.
 
-    Queries both `owned_pages` and `client_pages` per Business Suite portfolio.
+    Queries `owned_pages` first across all Business Manager portfolios, then
+    `client_pages`. `owned_pages` entries represent primary page ownership and
+    take precedence over agency/client relationships in `client_pages`.
     """
     page_biz_map: dict[str, dict] = {}
-    for biz in businesses:
-        biz_id = biz.get("id")
-        if not biz_id:
-            continue
-        for endpoint in ("owned_pages", "client_pages"):
+    for endpoint in ("owned_pages", "client_pages"):
+        for biz in businesses:
+            biz_id = biz.get("id")
+            if not biz_id:
+                continue
             try:
                 resp = requests.get(
                     f"{GRAPH_API_BASE}/{biz_id}/{endpoint}",
                     params={
                         "access_token": user_token,
-                        "fields":       "id,name,access_token,category,picture",
+                        "fields":       "id,name,access_token,category,picture,business",
                         "limit":        200,
                     },
                     timeout=30,
                 )
                 for p in resp.json().get("data", []):
+                    p_biz = p.get("business") or {}
+                    owner_id = str(p_biz.get("id") or biz_id)
+                    owner_name = p_biz.get("name") or biz.get("name", "")
+
                     info = {
-                        "business_id":   biz_id,
-                        "business_name": biz.get("name", ""),
-                        "auth_account":  biz_auth_map.get(biz_id),
+                        "business_id":   owner_id,
+                        "business_name": owner_name,
+                        "auth_account":  biz_auth_map.get(owner_id) or biz_auth_map.get(biz_id),
                         "page_data":     p,
                     }
-                    if p.get("id"):
-                        page_biz_map[p["id"]] = info
-                    if p.get("name"):
-                        page_biz_map[p["name"]] = info
+                    p_id = p.get("id")
+                    p_name = p.get("name")
+
+                    # owned_pages takes precedence; client_pages must not overwrite an owned_pages entry
+                    if p_id and (endpoint == "owned_pages" or p_id not in page_biz_map):
+                        page_biz_map[p_id] = info
+                    if p_name and (endpoint == "owned_pages" or p_name not in page_biz_map):
+                        page_biz_map[p_name] = info
             except Exception as e:
                 logger.warning(f"{endpoint} lookup failed for biz {biz_id}: {e}")
     return page_biz_map
@@ -180,7 +190,7 @@ def _fetch_page_detail(page_id: str, user_token: str) -> dict | None:
             f"{GRAPH_API_BASE}/{page_id}",
             params={
                 "access_token": user_token,
-                "fields":       "id,name,access_token,category,picture",
+                "fields":       "id,name,access_token,category,picture,business",
             },
             timeout=15,
         )
@@ -204,6 +214,7 @@ def _discover_pages_and_instagram(
     """Discover Facebook Pages via `/me/accounts`, `/{biz}/owned_pages`, `/{biz}/client_pages` and their linked IG."""
     connected: list[dict] = []
     pages_dict: dict[str, dict] = {}
+    biz_auth_map = {biz.get("id"): biz.get("name", "") for biz in businesses if biz.get("id")}
 
     # 1. Fetch personal / direct pages from /me/accounts
     try:
@@ -211,7 +222,7 @@ def _discover_pages_and_instagram(
             f"{GRAPH_API_BASE}/me/accounts",
             params={
                 "access_token": user_token,
-                "fields":       "id,name,access_token,category,picture",
+                "fields":       "id,name,access_token,category,picture,business",
                 "limit":        200,
             },
             timeout=30,
@@ -223,17 +234,17 @@ def _discover_pages_and_instagram(
         logger.error(f"Failed to discover personal Facebook Pages (/me/accounts): {e}")
 
     # 2. Collect pages from Business Manager / Business Suite (owned_pages & client_pages)
-    for biz in businesses:
-        biz_id = biz.get("id")
-        if not biz_id:
-            continue
-        for endpoint in ("owned_pages", "client_pages"):
+    for endpoint in ("owned_pages", "client_pages"):
+        for biz in businesses:
+            biz_id = biz.get("id")
+            if not biz_id:
+                continue
             try:
                 resp = requests.get(
                     f"{GRAPH_API_BASE}/{biz_id}/{endpoint}",
                     params={
                         "access_token": user_token,
-                        "fields":       "id,name,access_token,category,picture",
+                        "fields":       "id,name,access_token,category,picture,business",
                         "limit":        200,
                     },
                     timeout=30,
@@ -250,9 +261,13 @@ def _discover_pages_and_instagram(
         page_name  = page.get("name", "")
         page_token = page.get("access_token", "")
 
+        p_biz = page.get("business") or {}
+        direct_biz_id = str(p_biz.get("id") or "")
+        direct_biz_name = str(p_biz.get("name") or "")
+
         biz_info     = page_biz_map.get(page_id) or page_biz_map.get(page_name) or {}
-        biz_id       = biz_info.get("business_id", "")
-        biz_name     = biz_info.get("business_name", "")
+        biz_id       = direct_biz_id or biz_info.get("business_id", "")
+        biz_name     = direct_biz_name or biz_info.get("business_name", "")
 
         # If user selected specific pages/businesses in Meta's consent popup, restrict to those IDs
         if granular_target_ids:
@@ -267,6 +282,12 @@ def _discover_pages_and_instagram(
             if page_detail and page_detail.get("access_token"):
                 page_token = page_detail["access_token"]
                 page = page_detail
+                if not direct_biz_id and page.get("business"):
+                    p_biz = page.get("business") or {}
+                    direct_biz_id = str(p_biz.get("id") or "")
+                    direct_biz_name = str(p_biz.get("name") or "")
+                    biz_id = direct_biz_id or biz_id
+                    biz_name = direct_biz_name or biz_name
 
         if not page_token:
             logger.warning(f"Skipping Page {page_name} ({page_id}): no access_token available")
@@ -274,9 +295,6 @@ def _discover_pages_and_instagram(
 
         avatar_url = f"https://graph.facebook.com/{page_id}/picture?type=large"
 
-        biz_info     = page_biz_map.get(page_id) or page_biz_map.get(page_name) or {}
-        biz_id       = biz_info.get("business_id", "")
-        biz_name     = biz_info.get("business_name", "")
         auth_account = biz_info.get("auth_account")
 
         ca_name = upsert_connected_account(
@@ -372,6 +390,7 @@ def _discover_instagram_for_page(
             "linked_page_id":   page_id,
             "linked_page_name": page_name,
             "business_id":      biz_id,
+            "business_name":    biz_name,
             "avatar_url":       ig_avatar_url,
         })
 

@@ -78,6 +78,9 @@ def upsert_auth_account(
     Returns:
         MSuite Auth Account document name
     """
+    if platform and platform.startswith("LinkedIn"):
+        platform = "LinkedIn"
+
     existing = frappe.db.get_value(
         "MSuite Auth Account",
         {"client": client_name, "platform": platform, "account_id": account_id},

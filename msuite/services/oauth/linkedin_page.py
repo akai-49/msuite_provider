@@ -32,11 +32,12 @@ logger = frappe.logger(MSUITE_LOGGER_NAME)
 LI_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 LI_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LI_API = "https://api.linkedin.com"
-LI_VERSION = "202605"
+LI_VERSION = "202405"
 
 LI_SCOPES = [
     "w_organization_social",
     "r_organization_social",
+    "rw_organization_admin",
 ]
 
 TOKEN_LIFETIME_SECONDS = 5_184_000  # 60 days
@@ -99,7 +100,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     first_org_info = _get_org_info(token, first_org_id)
     org_display_name = first_org_info.get("localizedName") or first_org_info.get("vanityName") or f"LinkedIn Page Admin"
 
-    auth_name = upsert_auth_account(client_name, "LinkedIn Page", person_sub, {
+    auth_name = upsert_auth_account(client_name, "LinkedIn", person_sub, {
         "account_name": org_display_name,
     })
 
@@ -112,7 +113,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
         org_name = org_info.get("localizedName") or org_info.get("vanityName") or f"walue.biz ({org_id})"
         org_logo = _extract_org_logo_url(org_info)
 
-        ca_org = upsert_connected_account(client_name, Platform.LINKEDIN, f"org:{org_id}", {
+        ca_org = upsert_connected_account(client_name, Platform.LINKEDIN_PAGE, f"org:{org_id}", {
             "display_name": org_name,
             "auth_account": auth_name,
             "access_token": token,
@@ -121,7 +122,7 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
             "token_expiry": add_to_date(now(), seconds=expires_in),
         })
 
-        push_account_to_client(client_name, Platform.LINKEDIN, {
+        push_account_to_client(client_name, Platform.LINKEDIN_PAGE, {
             "author_urn": f"urn:li:organization:{org_id}",
             "display_name": org_name,
             "access_token": token,
@@ -165,38 +166,64 @@ def _get_managed_organizations(token: str) -> list[dict]:
     headers = {
         "Authorization": f"Bearer {token}",
         "X-Restli-Protocol-Version": "2.0.0",
-        "Linkedin-Version": LI_VERSION,
     }
-    # Try /rest/organizationAcls
-    try:
-        resp = requests.get(
-            f"{LI_API}/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR",
-            headers=headers,
-            timeout=30,
-        )
-        if resp.ok:
-            elements = resp.json().get("elements", [])
-            if elements:
-                return elements
-    except Exception as e:
-        logger.error(f"LinkedIn /rest/organizationAcls failed: {e}")
+    simple_headers = {"Authorization": f"Bearer {token}"}
 
-    # Fallback: /v2/organizationalEntityAcls
+    person_urn = ""
     try:
-        resp2 = requests.get(
-            f"{LI_API}/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=30,
-        )
-        if resp2.ok:
-            elements = resp2.json().get("elements", [])
-            if elements:
-                for el in elements:
-                    if "organizationalTarget" not in el and "organizationalEntity" in el:
-                        el["organizationalTarget"] = el["organizationalEntity"]
-                return elements
+        u_resp = requests.get(f"{LI_API}/v2/userinfo", headers=simple_headers, timeout=10)
+        if u_resp.ok:
+            sub = u_resp.json().get("sub")
+            if sub:
+                person_urn = f"urn:li:person:{sub}"
     except Exception as e:
-        logger.error(f"LinkedIn /v2/organizationalEntityAcls failed: {e}")
+        logger.debug(f"Userinfo fetch failed: {e}")
+
+    if not person_urn:
+        try:
+            m_resp = requests.get(f"{LI_API}/v2/me", headers=simple_headers, timeout=10)
+            if m_resp.ok:
+                pid = m_resp.json().get("id")
+                if pid:
+                    person_urn = f"urn:li:person:{pid}"
+        except Exception as e:
+            logger.debug(f"v2/me fetch failed: {e}")
+
+    logger.info(f"[LinkedIn Page Discovery] Resolved person_urn: {person_urn}")
+
+    urls = [
+        f"{LI_API}/rest/organizationAcls?q=roleAssignee",
+        f"{LI_API}/v2/organizationalEntityAcls?q=roleAssignee",
+    ]
+    if person_urn:
+        urls.insert(0, f"{LI_API}/rest/organizationAcls?q=roleAssignee&roleAssignee={person_urn}")
+        urls.insert(1, f"{LI_API}/v2/organizationalEntityAcls?q=roleAssignee&roleAssignee={person_urn}")
+
+    for url in urls:
+        h = headers if "/rest/" in url else simple_headers
+        try:
+            resp = requests.get(url, headers=h, timeout=20)
+            if resp.ok:
+                elements = resp.json().get("elements", [])
+                if elements:
+                    normalized = []
+                    for el in elements:
+                        target = (
+                            el.get("organizationalTarget")
+                            or el.get("organizationalEntity")
+                            or el.get("organization")
+                            or ""
+                        )
+                        if target:
+                            el["organizationalTarget"] = target
+                            normalized.append(el)
+                    if normalized:
+                        logger.info(f"LinkedIn ACL found {len(normalized)} organization(s) via {url}")
+                        return normalized
+            else:
+                logger.warning(f"LinkedIn ACL {url} status={resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            logger.error(f"LinkedIn ACL lookup {url} failed: {e}")
 
     # Fallback: Vanity name lookup for verified page
     for vanity in ["walue.biz", "walue-biz", "walue"]:
@@ -204,14 +231,17 @@ def _get_managed_organizations(token: str) -> list[dict]:
             resp3 = requests.get(
                 f"{LI_API}/rest/organizations?q=vanityName&vanityName={vanity}",
                 headers=headers,
-                timeout=30,
+                timeout=20,
             )
             if resp3.ok:
                 elements = resp3.json().get("elements", [])
                 if elements:
                     org_id = elements[0].get("id")
                     if org_id:
+                        logger.info(f"LinkedIn page found via vanity name {vanity}: org_id={org_id}")
                         return [{"organizationalTarget": f"urn:li:organization:{org_id}"}]
+            else:
+                logger.warning(f"LinkedIn vanity lookup {vanity} status={resp3.status_code}: {resp3.text[:200]}")
         except Exception as e:
             logger.error(f"LinkedIn vanity lookup for {vanity} failed: {e}")
 
@@ -222,7 +252,6 @@ def _get_org_info(token: str, org_id: str) -> dict:
     headers = {
         "Authorization": f"Bearer {token}",
         "X-Restli-Protocol-Version": "2.0.0",
-        "Linkedin-Version": LI_VERSION,
     }
     try:
         resp = requests.get(

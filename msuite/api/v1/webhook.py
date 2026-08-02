@@ -727,3 +727,97 @@ def receive_gmail_push(**kwargs):
 
     return {"status": "ok"}
 
+
+@frappe.whitelist(allow_guest=True)
+def receive_twitter_events(**kwargs):
+    """
+    X (Twitter) Activity API (XAA) webhook endpoint on Provider.
+    GET: Challenge Response Check (CRC) from X.
+    POST: Events (DMs, mentions, replies, likes, retweets, oauth revocations).
+
+    For GET CRC:
+      Calculates HMAC-SHA256 signature using Twitter app's Consumer Secret (api_secret_key).
+
+    For POST Events:
+      Reads for_user_id / user_id, resolves owning MSuite Client,
+      and forwards event payload to client site's endpoint:
+      msuite_workspace.inbox.api.v1.webhook.receive_twitter_events
+    """
+    request = getattr(frappe, "request", None)
+
+    # GET: CRC Check Handshake
+    if request and request.method == "GET":
+        crc_token = frappe.form_dict.get("crc_token") or kwargs.get("crc_token")
+        if crc_token:
+            import base64
+            import hashlib
+            import hmac
+            from msuite.services.oauth.base import get_msuite_app
+
+            app = get_msuite_app("Twitter")
+            secret = (
+                (getattr(app, "webhook_verify_token", None) or "").strip()
+                or app.get_password("api_secret_key", raise_exception=False)
+                or app.get_password("app_secret", raise_exception=False)
+                or ""
+            )
+            sha256_hash = hmac.new(
+                secret.encode("utf-8"),
+                crc_token.encode("utf-8"),
+                digestmod=hashlib.sha256,
+            ).digest()
+            encoded = base64.b64encode(sha256_hash).decode("utf-8")
+            logger.info(f"[X Webhook CRC] Token: {crc_token} | Secret len: {len(secret)} | Response: sha256={encoded}")
+
+            # X requires un-wrapped root JSON body {"response_token": "sha256=..."}.
+            # Use Werkzeug Response directly to bypass Frappe's JSON response wrapper.
+            import json
+            from werkzeug.wrappers import Response
+
+            return Response(
+                json.dumps({"response_token": f"sha256={encoded}"}),
+                status=200,
+                content_type="application/json",
+            )
+
+    # POST: Incoming XAA Events
+    payload = frappe.request.get_json(silent=True) or dict(frappe.form_dict) or {}
+    for_user_id = str(payload.get("for_user_id") or payload.get("user_id") or "")
+
+    if not for_user_id:
+        for key in ("direct_message_events", "tweet_create_events", "favorite_events"):
+            events = payload.get(key) or []
+            if events and isinstance(events, list):
+                for_user_id = str((events[0].get("target") or {}).get("recipient_id") or events[0].get("user_id") or "")
+                if for_user_id:
+                    break
+
+    if not for_user_id:
+        logger.warning("Twitter webhook received but missing for_user_id — dropping")
+        return {"status": "ignored"}
+
+    connected = frappe.db.get_value(
+        "MSuite Connected Account",
+        {"account_id": for_user_id, "platform": "Twitter", "status": "Active"},
+        ["client", "name"],
+        as_dict=True,
+    )
+    if not connected:
+        logger.info(f"Twitter webhook for unknown user_id={for_user_id} — dropping")
+        return {"status": "ignored"}
+
+    client_doc = frappe.get_doc("MSuite Client", connected.client)
+    if client_doc.status != "Active":
+        return {"status": "ignored"}
+
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint="msuite_workspace.inbox.api.v1.webhook.receive_twitter_events",
+        payload=payload,
+    )
+
+    return {"status": "ok"}
+
+

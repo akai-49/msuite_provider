@@ -151,7 +151,7 @@ def build_auth_url(platform: str, client_name: str) -> dict:
     state = secrets.token_urlsafe(32)
     frappe.cache.set_value(
         f"{OAUTH_STATE_CACHE_PREFIX}:{state}",
-        json.dumps({"client_name": client_name, "platform": platform}),
+        json.dumps({"client_name": client_name, "platform": platform, "state": state}),
         expires_in_sec=OAUTH_STATE_TTL_SECONDS,
     )
 
@@ -182,6 +182,7 @@ def process_oauth_callback(code: str, state: str) -> dict:
         frappe.throw("OAuth session expired. Please try again.", OAuthError)
 
     state_data = json.loads(cached)
+    state_data["state"] = state
     frappe.cache.delete_value(f"{OAUTH_STATE_CACHE_PREFIX}:{state}")
 
     platform = state_data["platform"]

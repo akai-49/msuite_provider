@@ -10,6 +10,7 @@ Refresh token: 6-month validity.
 
 Scopes: tweet.read, tweet.write, users.read, offline.access, media.write
 """
+import base64
 import hashlib
 import secrets
 
@@ -52,7 +53,8 @@ def build_auth_url(client_name: str, state: str) -> str:
     app = get_msuite_app("Twitter")
 
     code_verifier = secrets.token_urlsafe(64)[:128]
-    code_challenge = hashlib.sha256(code_verifier.encode()).hexdigest()
+    digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
 
     frappe.cache.set_value(
         f"msuite:x_pkce:{state}",
@@ -83,7 +85,6 @@ def exchange_token(code: str, state_data: dict) -> dict:
     code_verifier = frappe.cache.get_value(f"msuite:x_pkce:{state}")
     if not code_verifier:
         frappe.throw("PKCE code_verifier expired. Please retry.", TokenExchangeError)
-    frappe.cache.delete_value(f"msuite:x_pkce:{state}")
 
     resp = requests.post(
         X_TOKEN_URL,
@@ -99,8 +100,13 @@ def exchange_token(code: str, state_data: dict) -> dict:
     )
     data = resp.json()
     if "access_token" not in data:
-        logger.error(f"X token exchange failed: {data}")
-        frappe.throw("Failed to exchange X authorization code", TokenExchangeError)
+        logger.error(f"X token exchange failed status={resp.status_code}: {data}")
+        frappe.throw(
+            f"Failed to exchange X authorization code: {data.get('error_description') or data.get('error') or resp.text[:100]}",
+            TokenExchangeError,
+        )
+
+    frappe.cache.delete_value(f"msuite:x_pkce:{state}")
 
     return {
         "access_token": data["access_token"],
@@ -188,7 +194,10 @@ def _get_current_user(token: str) -> dict:
             params={"user.fields": "id,name,username,profile_image_url"},
             timeout=30,
         )
-        return resp.json().get("data", {})
+        data = resp.json()
+        if not resp.ok:
+            logger.error(f"X user lookup HTTP {resp.status_code}: {data}")
+        return data.get("data", {})
     except Exception as e:
         logger.error(f"X user lookup failed: {e}")
         return {}
