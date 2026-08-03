@@ -103,6 +103,50 @@ def start_auth_for_client(client_name: str, platform: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True)
+def finalize_linkedin_pages_for_client(client_name: str, state: str, selected=None) -> dict:
+    """Connect the LinkedIn pages the user ticked in the client's checklist.
+
+    Second half of the deferred-push flow: `auth_callback` discovered the
+    user's admin-managed orgs and handed them to the client UI without
+    creating anything. This connects only the selected ones, reusing the
+    token cached against `state`.
+
+    Auth: same `X-MSuite-Provider-Key` / `-Secret` header pair as
+    `start_auth_for_client`.
+
+    Args:
+        client_name: MSuite Client document name.
+        state: The OAuth state the callback returned alongside the candidates.
+        selected: List of organization URNs to connect. JSON string or list.
+    """
+    try:
+        client_doc = require_msuite_client_auth(client_name)
+
+        if isinstance(selected, str):
+            try:
+                selected = json.loads(selected)
+            except (TypeError, ValueError):
+                selected = [s for s in selected.split(",") if s]
+        selected = selected or []
+
+        from msuite.services.oauth import finalize_linkedin_pages
+        result = finalize_linkedin_pages(state, selected, client_doc.name)
+
+        logger.info(
+            f"finalize_linkedin_pages_for_client: {client_doc.name} "
+            f"connected {len(result.get('connected', []))} page(s)"
+        )
+        return success_response(result)
+    except frappe.AuthenticationError as e:
+        return error_response(ErrorCode.PERMISSION_DENIED, str(e))
+    except frappe.PermissionError as e:
+        return error_response(ErrorCode.PERMISSION_DENIED, str(e))
+    except Exception as e:
+        logger.error(f"finalize_linkedin_pages_for_client failed: {e}", exc_info=True)
+        return error_response(ErrorCode.INVALID_INPUT, str(e))
+
+
+@frappe.whitelist(allow_guest=True)
 def list_configured_platforms_for_client(client_name: str) -> dict:
     """
     Return platforms whose OAuth handlers are registered + ready for
@@ -322,6 +366,25 @@ def auth_callback(**kwargs) -> None:
 
         from msuite.services.oauth import process_oauth_callback
         result = process_oauth_callback(code, state)
+
+        # LinkedIn page mode: nothing was created yet. Hand the discovered
+        # orgs to the opener so the user can pick which ones to connect.
+        if result.get("pending"):
+            candidates = result.get("candidates", [])
+            _respond_popup(
+                "Choose Your Pages",
+                f"Found {len(candidates)} LinkedIn page(s). Select which to connect."
+                if candidates else "No admin-managed LinkedIn pages found.",
+                "green",
+                {
+                    "type": "linkedin_select",
+                    "platform": result.get("platform", "linkedin"),
+                    "state": result.get("state", state),
+                    "candidates": candidates,
+                },
+                close_after_ms=1500,
+            )
+            return
 
         count = len(result.get("connected", []))
         platform = result.get("platform", "")
@@ -758,10 +821,14 @@ def _list_connected_accounts(client_name: str) -> list[dict]:
 # ======================================================================
 
 
-def _respond_popup(title: str, message: str, indicator: str, post_data: dict):
+def _respond_popup(title: str, message: str, indicator: str, post_data: dict, close_after_ms: int = 10000):
     """
     Render HTML page that posts result to opener window via postMessage
     and auto-closes. Used for OAuth popup flows.
+
+    `close_after_ms` exists for flows that hand off to a follow-up UI in the
+    opener (LinkedIn page selection) — the popup would otherwise sit on top
+    of the modal the user is meant to act on.
     """
     safe_message = frappe.utils.escape_html(message)
     post_json = json.dumps(post_data)
@@ -772,8 +839,9 @@ def _respond_popup(title: str, message: str, indicator: str, post_data: dict):
         <script>
             if (window.opener) {{
                 window.opener.postMessage({post_json}, '*');
+                try {{ window.opener.focus(); }} catch (e) {{}}
             }}
-            setTimeout(function() {{ window.close(); }}, 10000);
+            setTimeout(function() {{ window.close(); }}, {int(close_after_ms)});
         </script>""",
         indicator_color=indicator,
     )

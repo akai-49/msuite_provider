@@ -27,6 +27,8 @@ from msuite.constants import (
     ConnectedAccountStatus,
     OAUTH_STATE_TTL_SECONDS,
     OAUTH_STATE_CACHE_PREFIX,
+    LINKEDIN_PENDING_TTL_SECONDS,
+    LINKEDIN_PENDING_CACHE_PREFIX,
     TOKEN_REFRESH_BUFFER_DAYS,
     MSUITE_LOGGER_NAME,
 )
@@ -35,8 +37,6 @@ from msuite.exceptions import OAuthError
 # Platform handler imports
 from . import google
 from . import linkedin
-from . import linkedin_page
-from . import linkedin_profile
 from . import meta_ads
 from . import meta_all
 from . import meta_catalogue
@@ -58,9 +58,11 @@ _AUTH_URL_BUILDERS = {
     "meta_ads":    meta_ads.build_auth_url,
     "meta_all":    meta_all.build_auth_url,
     "meta_catalogue": meta_catalogue.build_auth_url,
-    "linkedin":          linkedin_page.build_auth_url,
-    "linkedin_page":     linkedin_page.build_auth_url,
-    "linkedin_profile":  linkedin_profile.build_auth_url,
+    # One handler, one MSuite App. The three keys differ only in which
+    # entity type the callback connects (see linkedin._mode_from_state).
+    "linkedin":          linkedin.build_auth_url,
+    "linkedin_page":     linkedin.build_auth_url,
+    "linkedin_profile":  linkedin.build_auth_url,
     "twitter":     twitter.build_auth_url,
     "google":      google.build_auth_url,
     "google_youtube": google.build_auth_url,
@@ -73,9 +75,9 @@ _TOKEN_EXCHANGERS = {
     "meta_ads":    meta_ads.exchange_token,
     "meta_all":    meta_all.exchange_token,
     "meta_catalogue": meta_catalogue.exchange_token,
-    "linkedin":          linkedin_page.exchange_token,
-    "linkedin_page":     linkedin_page.exchange_token,
-    "linkedin_profile":  linkedin_profile.exchange_token,
+    "linkedin":          linkedin.exchange_token,
+    "linkedin_page":     linkedin.exchange_token,
+    "linkedin_profile":  linkedin.exchange_token,
     "twitter":     twitter.exchange_token,
     "google":      google.exchange_token,
     "google_youtube": google.exchange_token,
@@ -88,9 +90,9 @@ _ACCOUNT_DISCOVERERS = {
     "meta_ads":    meta_ads.discover_accounts,
     "meta_all":    meta_all.discover_accounts,
     "meta_catalogue": meta_catalogue.discover_accounts,
-    "linkedin":          linkedin_page.discover_accounts,
-    "linkedin_page":     linkedin_page.discover_accounts,
-    "linkedin_profile":  linkedin_profile.discover_accounts,
+    "linkedin":          linkedin.discover_accounts,
+    "linkedin_page":     linkedin.discover_accounts,
+    "linkedin_profile":  linkedin.discover_accounts,
     "twitter":     twitter.discover_accounts,
     "google":      google.discover_accounts,
     "google_youtube": google.discover_accounts,
@@ -104,7 +106,7 @@ _TOKEN_REFRESHERS = {
     "Instagram": meta_base.refresh_long_lived_token,
     "Meta Ads":  meta_base.refresh_long_lived_token,
     "Meta Catalogue": meta_base.refresh_long_lived_token,
-    "LinkedIn":  linkedin_page.refresh_token,
+    "LinkedIn":  linkedin.refresh_token,
     "Twitter":   twitter.refresh_token_fn,
     "YouTube":   google.refresh_token_fn,
     "Google Ads": google.refresh_token_fn,
@@ -200,12 +202,77 @@ def process_oauth_callback(code: str, state: str) -> dict:
         frappe.throw(f"No account discoverer for platform: {platform}", OAuthError)
     connected = discoverer(client_name, token_data)
 
+    # A discoverer may defer account creation and hand back candidates for the
+    # user to choose from (LinkedIn pages). Stash the token + candidates so
+    # the finalize call can complete the connect without a second OAuth round.
+    if isinstance(connected, dict) and connected.get("pending"):
+        frappe.cache.set_value(
+            f"{LINKEDIN_PENDING_CACHE_PREFIX}:{state}",
+            json.dumps({
+                "client_name": client_name,
+                "platform": platform,
+                "token_data": token_data,
+                "candidates": connected.get("candidates", []),
+            }),
+            expires_in_sec=LINKEDIN_PENDING_TTL_SECONDS,
+        )
+        return {
+            "platform": platform,
+            "pending": True,
+            "state": state,
+            "candidates": connected.get("candidates", []),
+        }
+
     frappe.db.commit()
     logger.info(
         f"OAuth complete for {client_name}/{platform}: "
         f"{len(connected)} accounts connected"
     )
     return {"platform": platform, "connected": connected}
+
+
+def finalize_linkedin_pages(state: str, selected: list[str], client_name: str) -> dict:
+    """Connect the LinkedIn pages the user ticked after the OAuth callback.
+
+    Consumes the pending entry cached by `process_oauth_callback`, so the
+    token from the original authorization is reused — the user does not go
+    through LinkedIn a second time. The cache entry is burned on use.
+
+    `client_name` must match the client that started the flow: the cache is
+    keyed by state alone, and that entry holds a live access token, so one
+    authenticated client must not be able to finalize another's session.
+    """
+    cache_key = f"{LINKEDIN_PENDING_CACHE_PREFIX}:{state}"
+    cached = frappe.cache.get_value(cache_key)
+    if not cached:
+        frappe.throw("LinkedIn selection expired. Please reconnect.", OAuthError)
+
+    pending = json.loads(cached)
+    if pending.get("client_name") != client_name:
+        # Burn it: a mismatch means either a bug or a probe, and either way
+        # this state should not survive to be retried.
+        frappe.cache.delete_value(cache_key)
+        logger.warning(
+            f"LinkedIn finalize rejected: {client_name} tried to claim a "
+            f"session belonging to {pending.get('client_name')}"
+        )
+        frappe.throw("LinkedIn session does not belong to this client.", OAuthError)
+
+    frappe.cache.delete_value(cache_key)
+
+    connected = linkedin.finalize_pages(
+        client_name=pending["client_name"],
+        token_data=pending["token_data"],
+        candidates=pending.get("candidates", []),
+        selected=selected or [],
+    )
+
+    frappe.db.commit()
+    logger.info(
+        f"LinkedIn page selection for {pending['client_name']}: "
+        f"{len(connected)} of {len(pending.get('candidates', []))} connected"
+    )
+    return {"platform": "linkedin", "connected": connected}
 
 
 def exchange_whatsapp_code(

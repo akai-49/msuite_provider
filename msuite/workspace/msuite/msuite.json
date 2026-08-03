@@ -96,6 +96,26 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "MSuite LinkedIn Page Account",
+   "link_count": 0,
+   "link_to": "MSuite LinkedIn Page Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MSuite LinkedIn Profile Account",
+   "link_count": 0,
+   "link_to": "MSuite LinkedIn Profile Account",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "MSuite Product",
    "link_count": 0,
    "link_to": "MSuite Product",

@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-08-03 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "details_section",
+  "connected_account",
+  "organization_id",
+  "organization_name",
+  "cb_details",
+  "vanity_name",
+  "followers_count"
+ ],
+ "fields": [
+  {
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "LinkedIn Page Account"
+  },
+  {
+   "fieldname": "connected_account",
+   "fieldtype": "Link",
+   "label": "Connected Account",
+   "options": "MSuite Connected Account",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "organization_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Organization ID / URN",
+   "reqd": 1
+  },
+  {
+   "bold": 1,
+   "fieldname": "organization_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Organization Name"
+  },
+  {
+   "fieldname": "cb_details",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vanity_name",
+   "fieldtype": "Data",
+   "label": "Vanity Name"
+  },
+  {
+   "fieldname": "followers_count",
+   "fieldtype": "Int",
+   "label": "Followers Count",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-03 00:00:00",
+ "modified_by": "Administrator",
+ "module": "MSuite Client",
+ "name": "MSuite LinkedIn Page Account",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

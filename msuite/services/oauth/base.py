@@ -24,12 +24,9 @@ def get_msuite_app(platform: str):
     """
     Fetch the active MSuite App record for a platform.
 
-    Normalizes platform key (e.g., "linkedin_page" -> "LinkedIn Page") and matches
+    Normalizes platform key (e.g., "meta_social" -> "Meta Social") and matches
     against document name, app_name, or platform field.
     """
-    if platform.lower() == "linkedin":
-        platform = "LinkedIn Page"
-
     terms = [
         platform,
         platform.replace("_", " "),
@@ -78,9 +75,6 @@ def upsert_auth_account(
     Returns:
         MSuite Auth Account document name
     """
-    if platform and platform.startswith("LinkedIn"):
-        platform = "LinkedIn"
-
     existing = frappe.db.get_value(
         "MSuite Auth Account",
         {"client": client_name, "platform": platform, "account_id": account_id},

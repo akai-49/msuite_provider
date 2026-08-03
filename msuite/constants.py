@@ -131,10 +131,9 @@ class Platform:
     YOUTUBE = "YouTube"
     GMAIL = "Gmail"
     TIKTOK = "TikTok"
-    LINKEDIN_PAGE = "LinkedIn Page"
-    LINKEDIN_PROFILE = "LinkedIn Profile"
+    LINKEDIN = "LinkedIn"
     TWITTER = "Twitter"
-    ALL = [WHATSAPP, FACEBOOK, INSTAGRAM, META_ADS, META_CATALOGUE, GOOGLE, YOUTUBE, GMAIL, TIKTOK, LINKEDIN_PAGE, LINKEDIN_PROFILE, TWITTER]
+    ALL = [WHATSAPP, FACEBOOK, INSTAGRAM, META_ADS, META_CATALOGUE, GOOGLE, YOUTUBE, GMAIL, TIKTOK, LINKEDIN, TWITTER]
 
 
 class ConnectedAccountStatus:
@@ -152,6 +151,12 @@ GRAPH_API_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 # OAuth
 OAUTH_STATE_TTL_SECONDS = 600
 OAUTH_STATE_CACHE_PREFIX = "msuite:oauth_state"
+
+# LinkedIn page selection: the callback discovers the user's admin-managed
+# orgs but creates nothing until they pick. This holds the exchanged token
+# and the candidate list in between.
+LINKEDIN_PENDING_TTL_SECONDS = 600
+LINKEDIN_PENDING_CACHE_PREFIX = "msuite:linkedin_pending"
 
 # Token refresh
 TOKEN_REFRESH_BUFFER_DAYS = 7

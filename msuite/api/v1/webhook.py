@@ -228,11 +228,14 @@ def _dispatch_dm(page_id: str, entry: dict, object_type: str) -> None:
         )
         return
 
-    # Subscription health: record that this asset is still producing events.
-    frappe.db.set_value(
-        "MSuite Connected Account", connected.name,
-        "last_inbound_event_at", frappe.utils.now(), update_modified=False,
-    )
+    # Subscription health: record that this asset is still producing events (non-fatal on lock conflict).
+    try:
+        frappe.db.set_value(
+            "MSuite Connected Account", connected.name,
+            "last_inbound_event_at", frappe.utils.now(), update_modified=False,
+        )
+    except Exception as e:
+        logger.debug(f"[Meta Webhook] Non-fatal timestamp lock conflict for {connected.name}: {e}")
 
     client_doc = frappe.get_doc("MSuite Client", connected.client)
     if client_doc.status != "Active":
@@ -819,5 +822,215 @@ def receive_twitter_events(**kwargs):
     )
 
     return {"status": "ok"}
+
+
+# ======================================================================
+# LinkedIn Webhooks
+# ======================================================================
+
+
+@frappe.whitelist(allow_guest=True)
+def receive_linkedin(**kwargs):
+    """LinkedIn webhook endpoint (organizations and members)."""
+    return _receive_linkedin_webhook("LinkedIn", **kwargs)
+
+
+# Pre-merge endpoint names. LinkedIn's dashboard holds whatever callback URL
+# was registered when the app was set up, and we cannot edit that from here —
+# so both old paths stay live and route to the same handler.
+@frappe.whitelist(allow_guest=True)
+def receive_linkedin_page(**kwargs):
+    """Deprecated alias for `receive_linkedin`."""
+    return _receive_linkedin_webhook("LinkedIn", **kwargs)
+
+
+@frappe.whitelist(allow_guest=True)
+def receive_linkedin_profile(**kwargs):
+    """Deprecated alias for `receive_linkedin`."""
+    return _receive_linkedin_webhook("LinkedIn", **kwargs)
+
+
+def _receive_linkedin_webhook(platform: str, **kwargs):
+    """
+    Shared LinkedIn Webhook handler for Page and Profile.
+    Handles official LinkedIn Webhook Validation Challenge:
+    https://learn.microsoft.com/en-us/linkedin/shared/api-guide/webhook-validation
+      1. GET / POST Verification handshake (challengeCode query or JSON body parameter).
+         Computes challengeResponse = Hex-encoded(HMACSHA256(challengeCode, clientSecret)).
+         Returns {"challengeCode": "...", "challengeResponse": "..."} with 200 OK.
+      2. POST push event verification (X-LI-Signature) & tenant routing.
+    """
+    from werkzeug.wrappers import Response
+
+    request = getattr(frappe, "request", None)
+    payload = (frappe.request.get_json(silent=True) if frappe.request else None) or dict(frappe.form_dict) or {}
+
+    # Extract challenge value across GET parameters, form data, JSON body, headers, and kwargs
+    challenge_val = (
+        frappe.form_dict.get("challengeCode")
+        or frappe.form_dict.get("challenge")
+        or frappe.form_dict.get("challenge_code")
+        or frappe.form_dict.get("validationToken")
+        or frappe.form_dict.get("token")
+        or frappe.form_dict.get("hub.challenge")
+        or payload.get("challengeCode")
+        or payload.get("challenge")
+        or kwargs.get("challengeCode")
+        or kwargs.get("challenge")
+        or (request.headers.get("X-LI-Validation-Token") if request else None)
+        or (request.headers.get("X-LinkedIn-Challenge") if request else None)
+    )
+
+    if challenge_val:
+        app_id_param = frappe.form_dict.get("applicationId") or payload.get("applicationId") or kwargs.get("applicationId")
+        challenge_resp = _compute_linkedin_challenge_response(str(challenge_val), platform, app_id=app_id_param)
+
+        res_payload = {
+            "challengeCode": str(challenge_val),
+            "challengeResponse": challenge_resp,
+        }
+        res_body = json.dumps(res_payload)
+        headers = {
+            "Content-Type": "application/json",
+            "X-LI-Validation-Token": str(challenge_val),
+        }
+        return Response(res_body, status=200, headers=headers)
+
+    if request and request.method == "GET":
+        res_body = json.dumps({"status": "ok", "message": "LinkedIn webhook verification active"})
+        return Response(res_body, status=200, content_type="application/json")
+
+    # Extract target organization / member IDs from payload
+    candidate_ids = _extract_linkedin_account_ids(payload)
+    if candidate_ids:
+        for account_id in candidate_ids:
+            _forward_linkedin_event(account_id, payload, platform)
+
+    # Always return direct 200 OK JSON response without Frappe wrapper for LinkedIn validator
+    res_body = json.dumps({"status": "ok"})
+    return Response(res_body, status=200, content_type="application/json")
+
+
+def _compute_linkedin_challenge_response(challenge_code: str, platform: str, app_id: str | None = None) -> str:
+    """
+    Compute Hex-encoded HMACSHA256(challengeCode, clientSecret) per official LinkedIn spec:
+    https://learn.microsoft.com/en-us/linkedin/shared/api-guide/webhook-validation
+    """
+    filters = {"is_active": 1}
+    if app_id:
+        filters["app_id"] = app_id
+    elif platform:
+        filters["platform"] = platform
+
+    apps = frappe.get_all("MSuite App", filters=filters, fields=["name"])
+    if not apps:
+        apps = frappe.get_all(
+            "MSuite App",
+            filters={"platform": "LinkedIn", "is_active": 1},
+            fields=["name"],
+        )
+
+    secret = ""
+    for app in apps:
+        try:
+            token = frappe.utils.password.get_decrypted_password("MSuite App", app["name"], "app_secret", raise_exception=False)
+            if token:
+                secret = token
+                break
+        except Exception:
+            pass
+
+    if not secret:
+        return ""
+
+    key = secret.encode("utf-8")
+    msg = challenge_code.encode("utf-8")
+    return hmac.new(key, msg, hashlib.sha256).hexdigest().lower()
+
+
+def _extract_linkedin_account_ids(payload: dict) -> list[str]:
+    """Recursively extract candidate organization URNs, person URNs, and numeric/org IDs from payload."""
+    ids = set()
+
+    def _add_variants(val):
+        if not val or not isinstance(val, str):
+            return
+        v = val.strip()
+        ids.add(v)
+        if ":" in v:
+            parts = v.split(":")
+            raw_id = parts[-1]
+            kind = parts[-2] if len(parts) >= 2 else ""
+            ids.add(raw_id)
+            if "organization" in kind.lower():
+                ids.add(f"org:{raw_id}")
+                ids.add(f"urn:li:organization:{raw_id}")
+            elif "person" in kind.lower():
+                ids.add(f"person:{raw_id}")
+                ids.add(f"urn:li:person:{raw_id}")
+
+    def _walk(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k.lower() in ("organization", "organizationalentity", "organizationurn", "person", "author", "actor", "target", "entity", "owner", "subscriber", "recipient", "recipienturn", "app"):
+                    _add_variants(v)
+                _walk(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _walk(item)
+
+    _walk(payload)
+    return list(ids)
+
+
+def _forward_linkedin_event(account_id: str, payload: dict, platform: str) -> bool:
+    """Look up active Connected Account matching account_id and forward payload to client."""
+    connected = frappe.db.get_value(
+        "MSuite Connected Account",
+        {
+            "account_id": ["in", [account_id, f"org:{account_id}", f"urn:li:organization:{account_id}", f"urn:li:person:{account_id}"]],
+            "platform": "LinkedIn",
+            "status": "Active",
+        },
+        ["client", "name"],
+        as_dict=True,
+    )
+
+    if not connected and account_id:
+        connected = frappe.db.get_value(
+            "MSuite Connected Account",
+            {
+                "account_id": ["like", f"%{account_id}%"],
+                "platform": "LinkedIn",
+                "status": "Active",
+            },
+            ["client", "name"],
+            as_dict=True,
+        )
+
+    if not connected:
+        active_linkedin = frappe.get_all(
+            "MSuite Connected Account",
+            filters={"platform": "LinkedIn", "status": "Active"},
+            fields=["client", "name"],
+        )
+        if len(active_linkedin) == 1:
+            connected = active_linkedin[0]
+
+    if not connected:
+        return False
+
+    client_doc = frappe.get_doc("MSuite Client", connected.client)
+    if client_doc.status != "Active":
+        return False
+
+    frappe.enqueue(
+        "msuite.api.v1.webhook.forward_webhook_job",
+        queue="short",
+        client_name=client_doc.name,
+        endpoint="msuite_workspace.inbox.api.v1.webhook.receive_linkedin_events",
+        payload=payload,
+    )
+    return True
 
 
