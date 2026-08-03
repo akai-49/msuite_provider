@@ -17,5 +17,5 @@ build-backend = "flit_core.buildapi"
 # Bench reads this section to install Frappe-flavoured siblings
 # alongside this app — same shape msuite_provider/pyproject.toml uses.
 [tool.bench.frappe-dependencies]
-frappe = ">=16.0.0"
-erpnext = ">=15.0.0"
+frappe = ">=16.0.0,<17.0.0"
+erpnext = ">=15.0.0,<17.0.0"
