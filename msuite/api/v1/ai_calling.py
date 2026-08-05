@@ -326,7 +326,7 @@ def get_inbound_config(phone_number: str) -> dict:
 
     config = _forward_to_client(
         client_doc,
-        f"{_CLIENT_APP_PREFIX}.doctype.voice_inbound_config.voice_inbound_config.get_inbound_config",
+        f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_inbound_config.ai_calling_inbound_config.get_inbound_config",
         {"phone_number": phone_number},
     )
     if isinstance(config, dict):
@@ -344,8 +344,8 @@ def get_config_by_did(did: str) -> dict:
 
     config = _forward_to_client(
         client_doc,
-        f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_organization_config"
-        ".ai_calling_organization_config.get_config_by_did",
+        f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_number_setup"
+        ".ai_calling_number_setup.get_config_by_did",
         {"did": did},
     )
     if isinstance(config, dict):
@@ -378,7 +378,7 @@ def create_call_log(**kwargs) -> dict:
 
     result = _forward_to_client(
         client_doc,
-        f"{_CLIENT_APP_PREFIX}.doctype.ai_call_log.ai_call_log.create_call_log",
+        f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_call_log.ai_calling_call_log.create_call_log",
         kwargs,
     )
     _cache_call_route(kwargs.get("call_id"), client_doc.name)
@@ -405,7 +405,7 @@ def update_call_log_recording(**kwargs) -> dict:
         try:
             result = _forward_to_client(
                 client_doc,
-                f"{_CLIENT_APP_PREFIX}.doctype.ai_call_log.ai_call_log.update_call_log_recording",
+                f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_call_log.ai_calling_call_log.update_call_log_recording",
                 kwargs,
             )
             _cache_call_route(call_id, client_doc.name)
@@ -424,7 +424,7 @@ def update_call_log_recording(**kwargs) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def update_campaign_lead(**kwargs) -> dict:
+def update_broadcast_recipient(**kwargs) -> dict:
     """
     Route the backend's campaign-lead update. Resolution order: explicit
     client_code → cached route via call_uuid → broadcast fallback.
@@ -439,7 +439,7 @@ def update_campaign_lead(**kwargs) -> dict:
         try:
             result = _forward_to_client(
                 client_doc,
-                f"{_CLIENT_APP_PREFIX}.doctype.voice_blast.voice_blast.update_campaign_lead",
+                f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_broadcast.ai_calling_broadcast.update_broadcast_recipient",
                 kwargs,
             )
             if isinstance(result, dict) and result.get("success") is False:

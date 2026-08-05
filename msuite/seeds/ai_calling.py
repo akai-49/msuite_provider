@@ -16,8 +16,8 @@ _FEATURE_TYPE_NUMERIC = "Numeric"
 
 AI_CALLING_PRODUCT_FEATURES = [
     {"feature_key": "ai_calling",            "feature_label": "AI Calling",              "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 10},
-    {"feature_key": "voice_blasts",          "feature_label": "Voice Blasts",            "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 20},
-    {"feature_key": "voice_blast_limit",     "feature_label": "Voice Blast Recipients",  "feature_type": _FEATURE_TYPE_NUMERIC, "display_order": 30},
+    {"feature_key": "broadcasts",          "feature_label": "Broadcasts",            "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 20},
+    {"feature_key": "broadcast_limit",     "feature_label": "Broadcast Recipients",  "feature_type": _FEATURE_TYPE_NUMERIC, "display_order": 30},
     {"feature_key": "monthly_call_minutes",  "feature_label": "Monthly Call Minutes",    "feature_type": _FEATURE_TYPE_NUMERIC, "display_order": 40},
     {"feature_key": "inbound_calling",       "feature_label": "Inbound Calling",         "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 50},
     {"feature_key": "outbound_calling",      "feature_label": "Outbound Calling",        "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 60},
@@ -51,8 +51,8 @@ AI_CALLING_PLANS = [
 AI_CALLING_PLAN_FEATURES = {
     "AICALLING-TRIAL": {
         "ai_calling":           (True,  None, None),
-        "voice_blasts":         (True,  None, None),
-        "voice_blast_limit":    (True,  100,  "per campaign"),
+        "broadcasts":         (True,  None, None),
+        "broadcast_limit":    (True,  100,  "per broadcast"),
         "monthly_call_minutes": (True,  50,   "minutes per month"),
         "inbound_calling":      (False, None, None),
         "outbound_calling":     (True,  None, None),
@@ -65,8 +65,8 @@ AI_CALLING_PLAN_FEATURES = {
     },
     "AICALLING-STARTER": {
         "ai_calling":           (True,  None, None),
-        "voice_blasts":         (True,  None, None),
-        "voice_blast_limit":    (True,  1000, "per campaign"),
+        "broadcasts":         (True,  None, None),
+        "broadcast_limit":    (True,  1000, "per broadcast"),
         "monthly_call_minutes": (True,  500,  "minutes per month"),
         "inbound_calling":      (False, None, None),
         "outbound_calling":     (True,  None, None),
@@ -79,8 +79,8 @@ AI_CALLING_PLAN_FEATURES = {
     },
     "AICALLING-PRO": {
         "ai_calling":           (True,  None,  None),
-        "voice_blasts":         (True,  None,  None),
-        "voice_blast_limit":    (True,  5000,  "per campaign"),
+        "broadcasts":         (True,  None,  None),
+        "broadcast_limit":    (True,  5000,  "per broadcast"),
         "monthly_call_minutes": (True,  2000,  "minutes per month"),
         "inbound_calling":      (True,  None,  None),
         "outbound_calling":     (True,  None,  None),
@@ -93,8 +93,8 @@ AI_CALLING_PLAN_FEATURES = {
     },
     "AICALLING-BIZ": {
         "ai_calling":           (True,  None,  None),
-        "voice_blasts":         (True,  None,  None),
-        "voice_blast_limit":    (True,  25000, "per campaign"),
+        "broadcasts":         (True,  None,  None),
+        "broadcast_limit":    (True,  25000, "per broadcast"),
         "monthly_call_minutes": (True,  10000, "minutes per month"),
         "inbound_calling":      (True,  None,  None),
         "outbound_calling":     (True,  None,  None),
@@ -107,8 +107,8 @@ AI_CALLING_PLAN_FEATURES = {
     },
     "AICALLING-ENT": {
         "ai_calling":           (True,  None, None),
-        "voice_blasts":         (True,  None, None),
-        "voice_blast_limit":    (True,  None, "per campaign"),
+        "broadcasts":         (True,  None, None),
+        "broadcast_limit":    (True,  None, "per broadcast"),
         "monthly_call_minutes": (True,  None, "minutes per month"),
         "inbound_calling":      (True,  None, None),
         "outbound_calling":     (True,  None, None),
