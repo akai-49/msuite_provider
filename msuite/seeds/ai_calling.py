@@ -32,7 +32,7 @@ AI_CALLING_PRODUCT_FEATURES = [
 AI_CALLING_PRODUCT = {
     "product_name": "AI Calling",
     "product_code": "AICALLING",
-    "description": "AI-powered voice calling platform — voice blasts, inbound/outbound calling, knowledge base, and AI agents.",
+    "description": "AI-powered voice calling platform — broadcasts, inbound/outbound calling, knowledge base, and AI agents.",
     "features": AI_CALLING_PRODUCT_FEATURES,
 }
 
