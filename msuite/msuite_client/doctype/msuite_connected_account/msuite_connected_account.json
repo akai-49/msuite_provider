@@ -41,69 +41,69 @@
   {
    "fieldname": "client",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Client",
    "options": "MSuite Client",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
+   "description": "Parent business/auth entity this account belongs to",
    "fieldname": "auth_account",
    "fieldtype": "Link",
    "label": "Auth Account",
-   "options": "MSuite Auth Account",
-   "description": "Parent business/auth entity this account belongs to"
+   "options": "MSuite Auth Account"
   },
   {
+   "description": "The product/service (not parent company)",
    "fieldname": "platform",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Platform",
    "options": "WhatsApp\nFacebook\nInstagram\nMeta Ads\nMeta Catalogue\nYouTube\nGmail\nGoogle Ads\nTikTok\nLinkedIn\nTwitter",
-   "reqd": 1,
-   "in_list_view": 1,
-   "description": "The product/service (not parent company)"
+   "reqd": 1
   },
   {
+   "bold": 1,
    "fieldname": "display_name",
    "fieldtype": "Data",
-   "label": "Display Name",
-   "read_only": 1,
    "in_list_view": 1,
-   "bold": 1
+   "label": "Display Name",
+   "read_only": 1
   },
   {
+   "description": "waba_id, page_id, ig_user_id, ad_account_id, etc.",
    "fieldname": "account_id",
    "fieldtype": "Data",
    "label": "Account ID",
-   "reqd": 1,
-   "description": "waba_id, page_id, ig_user_id, ad_account_id, etc."
+   "reqd": 1
   },
   {
    "fieldname": "cb_account",
    "fieldtype": "Column Break"
   },
   {
+   "default": "Active",
    "fieldname": "status",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Status",
    "options": "Active\nExpired\nDisconnected\nRevoked",
-   "default": "Active",
-   "in_list_view": 1,
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Set when a refresh attempt failed unrecoverably. Customer site shows a Reconnect prompt.",
    "fieldname": "needs_reauth",
    "fieldtype": "Check",
    "label": "Needs Re-auth",
-   "default": 0,
-   "read_only": 1,
-   "description": "Set when a refresh attempt failed unrecoverably. Customer site shows a Reconnect prompt."
+   "read_only": 1
   },
   {
+   "default": "Provider",
    "fieldname": "connected_via",
    "fieldtype": "Select",
    "label": "Connected Via",
    "options": "Provider\nClient",
-   "default": "Provider",
    "read_only": 1
   },
   {
@@ -116,20 +116,19 @@
   {
    "fieldname": "token_section",
    "fieldtype": "Section Break",
-   "label": "Token",
-   "hidden": 1
+   "label": "Token"
   },
   {
+   "description": "Encrypted. Short-lived for OAuth-refresh platforms (Google/Twitter/TikTok), long-lived for Meta.",
    "fieldname": "access_token",
    "fieldtype": "Password",
-   "label": "Access Token",
-   "description": "Encrypted. Short-lived for OAuth-refresh platforms (Google/Twitter/TikTok), long-lived for Meta."
+   "label": "Access Token"
   },
   {
+   "description": "Encrypted. Used by Google/Twitter/TikTok/LinkedIn-new to mint a fresh access_token. Null for Meta long-lived (extended in place via fb_exchange_token).",
    "fieldname": "refresh_token",
    "fieldtype": "Password",
-   "label": "Refresh Token",
-   "description": "Encrypted. Used by Google/Twitter/TikTok/LinkedIn-new to mint a fresh access_token. Null for Meta long-lived (extended in place via fb_exchange_token)."
+   "label": "Refresh Token"
   },
   {
    "fieldname": "token_type",
@@ -139,17 +138,17 @@
    "read_only": 1
   },
   {
+   "description": "Null = never expires",
    "fieldname": "token_expiry",
    "fieldtype": "Datetime",
    "label": "Token Expiry",
-   "read_only": 1,
-   "description": "Null = never expires"
+   "read_only": 1
   },
   {
+   "collapsible": 1,
    "fieldname": "timestamps_section",
    "fieldtype": "Section Break",
-   "label": "Timestamps",
-   "collapsible": 1
+   "label": "Timestamps"
   },
   {
    "fieldname": "connected_at",
@@ -158,38 +157,38 @@
    "read_only": 1
   },
   {
+   "description": "Last SUCCESSFUL refresh. Used by the daily cron to skip recently-refreshed accounts.",
    "fieldname": "last_refreshed",
    "fieldtype": "Datetime",
    "label": "Last Refreshed",
-   "read_only": 1,
-   "description": "Last SUCCESSFUL refresh. Used by the daily cron to skip recently-refreshed accounts."
+   "read_only": 1
   },
   {
+   "description": "Set on EVERY attempt (success or failure) so we don't hammer the provider after a known-broken token.",
    "fieldname": "last_refresh_attempt_at",
    "fieldtype": "Datetime",
    "label": "Last Refresh Attempt",
-   "read_only": 1,
-   "description": "Set on EVERY attempt (success or failure) so we don't hammer the provider after a known-broken token."
+   "read_only": 1
   },
   {
+   "description": "Diagnostic for the most recent failed refresh.",
    "fieldname": "last_refresh_error",
    "fieldtype": "Small Text",
    "label": "Last Refresh Error",
-   "read_only": 1,
-   "description": "Diagnostic for the most recent failed refresh."
+   "read_only": 1
   },
   {
+   "depends_on": "eval:doc.platform === 'Facebook' || doc.platform === 'Instagram'",
    "fieldname": "webhook_section",
    "fieldtype": "Section Break",
-   "label": "Webhook Subscription",
-   "depends_on": "eval:doc.platform === 'Facebook' || doc.platform === 'Instagram'"
+   "label": "Webhook Subscription"
   },
   {
+   "description": "Comma-separated Meta webhook fields the provider subscribed this Page to via /subscribed_apps. Empty = never subscribed (no realtime events will arrive).",
    "fieldname": "subscribed_fields",
    "fieldtype": "Small Text",
    "label": "Subscribed Webhook Fields",
-   "read_only": 1,
-   "description": "Comma-separated Meta webhook fields the provider subscribed this Page to via /subscribed_apps. Empty = never subscribed (no realtime events will arrive)."
+   "read_only": 1
   },
   {
    "fieldname": "subscribed_at",
@@ -198,11 +197,11 @@
    "read_only": 1
   },
   {
+   "description": "Diagnostic for the most recent failed /subscribed_apps call. Cleared on the next success.",
    "fieldname": "last_subscription_error",
    "fieldtype": "Small Text",
    "label": "Last Subscription Error",
-   "read_only": 1,
-   "description": "Diagnostic for the most recent failed /subscribed_apps call. Cleared on the next success."
+   "read_only": 1
   },
   {
    "fieldname": "last_inbound_event_at",
@@ -211,7 +210,6 @@
    "read_only": 1
   }
  ],
- "index_web_pages_for_search": 0,
  "links": [
   {
    "group": "Consent",
@@ -239,7 +237,7 @@
    "link_fieldname": "connected_account"
   }
  ],
- "modified": "2026-04-06 14:00:00",
+ "modified": "2026-08-07 12:17:55.108435",
  "modified_by": "Administrator",
  "module": "MSuite Client",
  "name": "MSuite Connected Account",
@@ -247,21 +245,23 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "role": "System Manager",
-   "read": 1,
-   "write": 1,
    "create": 1,
-   "delete": 1
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
   },
   {
-   "role": "MSuite Manager",
-   "read": 1,
-   "write": 1,
    "create": 1,
-   "delete": 1
+   "delete": 1,
+   "read": 1,
+   "role": "MSuite Manager",
+   "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "connected_at",
  "sort_order": "DESC",
+ "states": [],
  "title_field": "display_name"
 }
