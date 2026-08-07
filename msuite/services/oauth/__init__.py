@@ -44,6 +44,15 @@ from . import meta_social
 from . import meta_whatsapp
 from . import twitter
 
+# Not a platform handler — shared Meta plumbing, never in the registries
+# below. Imported explicitly because `_TOKEN_REFRESHERS` references
+# `meta_base.refresh_long_lived_token` at module level: without this line the
+# name resolves only as a side effect of the handlers above doing
+# `from .meta_base import ...`, which binds the submodule onto this package's
+# namespace. That works today but breaks with a NameError the moment those
+# imports are reordered or a handler stops using meta_base.
+from . import meta_base
+
 logger = frappe.logger(MSUITE_LOGGER_NAME)
 
 
