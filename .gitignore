@@ -43,5 +43,11 @@ tmp_*.py
 graphify-out/
 .agents/
 
+.claude
+.gemini
+GEMINI.md
+CLAUDE.md
+
 .ruff_cache
 
+.graphifyignore

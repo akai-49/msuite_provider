@@ -32,7 +32,7 @@
             "fieldname": "platform",
             "fieldtype": "Select",
             "label": "Platform",
-            "options": "Meta WhatsApp\nMeta Social\nMeta Catalogue\nGoogle\nTikTok\nLinkedIn\nTwitter\nAI Calling",
+            "options": "Meta WhatsApp\nMeta Social\nMeta Catalogue\nGoogle\nTikTok\nLinkedIn\nTwitter\nAI Calling\nMillionVerifier",
             "reqd": 1,
             "in_list_view": 1
         },
@@ -53,7 +53,7 @@
             "fieldname": "app_id",
             "fieldtype": "Data",
             "label": "App ID",
-            "mandatory_depends_on": "eval:doc.platform!='AI Calling'",
+            "mandatory_depends_on": "eval:doc.platform!='AI Calling' && doc.platform!='MillionVerifier'",
             "description": "Platform App/Client ID"
         },
         {

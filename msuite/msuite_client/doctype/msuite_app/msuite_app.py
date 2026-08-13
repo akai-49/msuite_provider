@@ -12,6 +12,9 @@ Supported platforms:
   - AI Calling: not an OAuth app — just the one shared AWS backend URL,
     universal across every client (organizations are distinguished by the
     X-Organization-ID header the backend receives on each call).
+  - MillionVerifier: not an OAuth app — a single API key (app_secret) is
+    all `msuite.api.v1.email_verify` needs; MillionVerifier has no
+    app_id/client_id concept, so app_id is not required for this platform.
 """
 import frappe
 from frappe.model.document import Document
