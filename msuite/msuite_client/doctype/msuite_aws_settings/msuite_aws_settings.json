@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "creation": "2026-08-14 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "aws_region",
+  "cb_creds",
+  "access_key_id",
+  "secret_access_key",
+  "sec_resources",
+  "manifest_bucket",
+  "main_router_queue_url",
+  "cb_resources",
+  "presign_expiry_seconds",
+  "max_manifest_bytes",
+  "sec_phase4",
+  "api_gateway_base_url",
+  "analytics_api_key",
+  "cb_phase4",
+  "relay_token",
+  "sec_secrets",
+  "secret_prefix"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Master switch for the AWS bulk-messaging execution plane. Off means every client's request_upload_url is refused.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "default": "ap-south-1",
+   "fieldname": "aws_region",
+   "fieldtype": "Data",
+   "label": "AWS Region",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb_creds",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Leave blank to use this bench's ambient credentials (instance profile / env).",
+   "fieldname": "access_key_id",
+   "fieldtype": "Data",
+   "label": "Access Key ID"
+  },
+  {
+   "description": "Never leaves this site. Client workspaces receive presigned URLs, never a key.",
+   "fieldname": "secret_access_key",
+   "fieldtype": "Password",
+   "label": "Secret Access Key"
+  },
+  {
+   "fieldname": "sec_resources",
+   "fieldtype": "Section Break",
+   "label": "Pipeline Resources"
+  },
+  {
+   "fieldname": "manifest_bucket",
+   "fieldtype": "Data",
+   "label": "S3 Manifest Bucket",
+   "reqd": 1
+  },
+  {
+   "fieldname": "main_router_queue_url",
+   "fieldtype": "Data",
+   "label": "SQS Main Router URL",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb_resources",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "900",
+   "description": "Lifetime of a presigned PUT URL. Long enough to upload a large manifest, short enough that a leaked URL is worthless quickly.",
+   "fieldname": "presign_expiry_seconds",
+   "fieldtype": "Int",
+   "label": "Presign Expiry (seconds)"
+  },
+  {
+   "default": "2147483648",
+   "description": "Ceiling enforced in the presigned URL's content-length-range condition. A client cannot upload more than this, whatever it claims.",
+   "fieldname": "max_manifest_bytes",
+   "fieldtype": "Int",
+   "label": "Max Manifest Bytes"
+  },
+  {
+   "fieldname": "sec_phase4",
+   "fieldtype": "Section Break",
+   "label": "Webhooks & Analytics"
+  },
+  {
+   "description": "MessagingApiUrl from the stack outputs. Used for the brokered analytics read; never sent to a client.",
+   "fieldname": "api_gateway_base_url",
+   "fieldtype": "Data",
+   "label": "API Gateway Base URL"
+  },
+  {
+   "description": "Must match the AnalyticsApiKey stack parameter. Secures GET /analytics.",
+   "fieldname": "analytics_api_key",
+   "fieldtype": "Password",
+   "label": "Analytics API Key"
+  },
+  {
+   "fieldname": "cb_phase4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Must match the RelayToken stack parameter. Authenticates the webhook Lambda to this site — it is not a client credential.",
+   "fieldname": "relay_token",
+   "fieldtype": "Password",
+   "label": "Relay Token"
+  },
+  {
+   "fieldname": "sec_secrets",
+   "fieldtype": "Section Break",
+   "label": "Gateway Secrets"
+  },
+  {
+   "default": "msuite",
+   "description": "AWS Secrets Manager prefix. A client's gateway credentials resolve to <prefix>/<channel>/<client_code> — the provider names the secret, the client never sees it.",
+   "fieldname": "secret_prefix",
+   "fieldtype": "Data",
+   "label": "Secret Prefix"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "MSuite Client",
+ "name": "MSuite AWS Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

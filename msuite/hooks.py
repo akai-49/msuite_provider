@@ -17,6 +17,14 @@ doc_events = {
             "msuite.hooks_handlers.subscription_hooks.on_subscription_update"
         ],
     },
+    "MSuite Client": {
+        "on_update": [
+            "msuite.hooks_handlers.client_hooks.on_client_update"
+        ],
+        "on_trash": [
+            "msuite.hooks_handlers.client_hooks.on_client_update"
+        ],
+    },
     "Sales Invoice": {
         "on_submit": [
             "msuite.hooks_handlers.invoice_hooks.on_invoice_submit"

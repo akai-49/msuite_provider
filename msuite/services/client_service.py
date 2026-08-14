@@ -434,3 +434,63 @@ def _post_to_client(
             f"Client communication error: {str(e)}",
             ClientConnectionError,
         )
+
+
+# Headers a gateway signs with. Forwarded to the client unchanged; everything
+# else — including anything AWS or this site added — is dropped.
+RAW_PASS_THROUGH_HEADERS = (
+    "x-hub-signature",
+    "x-hub-signature-256",
+    "x-twilio-signature",
+    "x-msuite-signature",
+    "content-type",
+)
+
+
+def post_raw_to_client(
+    client_doc,
+    endpoint: str,
+    raw_body: bytes,
+    source_headers: dict,
+    query: str = "",
+    timeout: int = 15,
+) -> tuple[bool, str]:
+    """Forward bytes to a client endpoint WITHOUT re-serialising them.
+
+    The counterpart to `_post_to_client` for one specific case: relaying a
+    third-party webhook whose body the client must authenticate itself.
+
+    `_post_to_client` sends `json=payload`, which is correct for payloads this
+    site composes. It is wrong here — the client recomputes an HMAC over the
+    exact bytes the gateway signed, and re-serialising a dict reorders keys and
+    changes whitespace, so the signature would never match and every relayed
+    receipt would 401.
+
+    Durability note: unlike the `MSuite Webhook Delivery` path (README §10),
+    this is not backed by a delivery row. The caller is the AWS webhook
+    consumer, where SQS already provides the retry and the dead-letter queue —
+    a second retry ledger here would double-deliver receipts that the client's
+    own terminal-state guards would then have to absorb.
+
+    Returns `(ok, error_summary)`. Never logs auth headers or bodies — a
+    webhook body carries recipient phone numbers and message ids.
+    """
+    forward = {k: v for k, v in (source_headers or {}).items() if k.lower() in RAW_PASS_THROUGH_HEADERS}
+    forward.update(make_auth_headers(client_doc))
+
+    url = f"{client_doc.client_url.rstrip('/')}/api/method/{endpoint}"
+    if query:
+        url += f"?{query}"
+
+    try:
+        resp = requests.post(url, headers=forward, data=raw_body, timeout=timeout)
+    except Exception as e:
+        logger.error(f"Raw forward to {client_doc.name} {endpoint} failed: {e}")
+        return False, str(e)[:300]
+
+    if resp.status_code != 200:
+        logger.warning(
+            f"Raw forward to {endpoint} returned {resp.status_code} ({client_doc.name})"
+        )
+        return False, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    return True, ""

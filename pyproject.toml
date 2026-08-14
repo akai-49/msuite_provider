@@ -10,6 +10,15 @@ license = {text = "MIT"}
 # wires them at the right point in the install flow.
 dependencies = []
 
+# Opt-in — only needed on a provider bench that brokers the AWS
+# bulk-messaging execution plane (see msuite/api/v1/bulk_messaging.py).
+# The AWS credentials live here and nowhere else. Install with:
+#   ./env/bin/pip install -e "apps/msuite[aws]"
+[project.optional-dependencies]
+aws = [
+    "boto3",
+]
+
 [build-system]
 requires = ["flit_core >=3.4,<4"]
 build-backend = "flit_core.buildapi"

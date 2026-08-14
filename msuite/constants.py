@@ -107,6 +107,16 @@ ENTITLEMENT_CACHE_TTL_SECONDS = 3600
 ENTITLEMENT_CACHE_KEY_PREFIX = "msuite:entitlements"
 TRIAL_PLAN_CACHE_KEY_PREFIX = "msuite:trial_plan"
 TRIAL_PLAN_CACHE_TTL_SECONDS = 3600
+
+# Webhook relay routing: client_code -> MSuite Client name. Sits in the hot
+# path of every delivery receipt from every gateway, so it is cached.
+#
+# Five minutes, not an hour like the two above: this is the window in which a
+# deactivated client would keep receiving relayed webhooks. `on_update` on
+# MSuite Client invalidates it immediately, so the TTL only covers a change
+# made outside the Document layer (a direct SQL update, a restored backup).
+RELAY_ROUTE_CACHE_KEY_PREFIX = "msuite:relay_route"
+RELAY_ROUTE_CACHE_TTL_SECONDS = 300
 MSUITE_LOGGER_NAME = "msuite"
 TRIAL_DEFAULT_DAYS = 14
 GRANT_RECONCILIATION_WINDOW_HOURS = 25
@@ -130,10 +140,11 @@ class Platform:
     GOOGLE = "Google"
     YOUTUBE = "YouTube"
     GMAIL = "Gmail"
+    OUTLOOK = "Outlook"
     TIKTOK = "TikTok"
     LINKEDIN = "LinkedIn"
     TWITTER = "Twitter"
-    ALL = [WHATSAPP, FACEBOOK, INSTAGRAM, META_ADS, META_CATALOGUE, GOOGLE, YOUTUBE, GMAIL, TIKTOK, LINKEDIN, TWITTER]
+    ALL = [WHATSAPP, FACEBOOK, INSTAGRAM, META_ADS, META_CATALOGUE, GOOGLE, YOUTUBE, GMAIL, OUTLOOK, TIKTOK, LINKEDIN, TWITTER]
 
 
 class ConnectedAccountStatus:
