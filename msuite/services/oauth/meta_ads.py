@@ -162,7 +162,8 @@ def _discover_ad_accounts(
                     f"act_{account_id}" in granular_target_ids
                 )
                 matches_business = bool(biz_id and biz_id in granular_target_ids)
-                if not (matches_account or matches_business):
+                is_direct_user_account = not src_biz_id and not biz_id
+                if not (matches_account or matches_business or is_direct_user_account):
                     logger.info(f"Skipping ad account {account_id} ({account_name}): not selected by user in Meta consent dialog.")
                     continue
 
@@ -185,7 +186,7 @@ def _discover_ad_accounts(
                     discovered[account_id]["business_id"] = biz_id
                     discovered[account_id]["business_name"] = biz_name
 
-    # 1. First attempt: Query owned_ad_accounts for each business
+    # 1. Query owned_ad_accounts for each business
     for biz in businesses:
         biz_id = biz.get("id")
         biz_name = biz.get("name", "")
@@ -193,18 +194,17 @@ def _discover_ad_accounts(
             url = f"{GRAPH_API_BASE}/{biz_id}/owned_ad_accounts"
             _collect_from_url(url, str(biz_id), biz_name)
 
-    # 2. Fallback: If no owned ad accounts found for the businesses, query client_ad_accounts & /me/adaccounts
-    if not discovered:
-        for biz in businesses:
-            biz_id = biz.get("id")
-            biz_name = biz.get("name", "")
-            if biz_id:
-                url = f"{GRAPH_API_BASE}/{biz_id}/client_ad_accounts"
-                _collect_from_url(url, str(biz_id), biz_name)
+    # 2. Query client_ad_accounts for each business
+    for biz in businesses:
+        biz_id = biz.get("id")
+        biz_name = biz.get("name", "")
+        if biz_id:
+            url = f"{GRAPH_API_BASE}/{biz_id}/client_ad_accounts"
+            _collect_from_url(url, str(biz_id), biz_name)
 
-        if not discovered:
-            url = f"{GRAPH_API_BASE}/me/adaccounts"
-            _collect_from_url(url, "", "")
+    # 3. Query direct/personal ad accounts from /me/adaccounts
+    url = f"{GRAPH_API_BASE}/me/adaccounts"
+    _collect_from_url(url, "", "")
 
     # Upsert discovered active accounts
     for acc in discovered.values():

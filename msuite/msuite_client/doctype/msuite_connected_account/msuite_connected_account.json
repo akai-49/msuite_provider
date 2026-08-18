@@ -30,7 +30,10 @@
   "subscribed_fields",
   "subscribed_at",
   "last_subscription_error",
-  "last_inbound_event_at"
+  "last_inbound_event_at",
+  "graph_section",
+  "graph_subscription_id",
+  "graph_subscription_expiry"
  ],
  "fields": [
   {
@@ -59,7 +62,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Platform",
-   "options": "WhatsApp\nFacebook\nInstagram\nMeta Ads\nMeta Catalogue\nYouTube\nGmail\nGoogle Ads\nTikTok\nLinkedIn\nTwitter",
+   "options": "WhatsApp\nFacebook\nInstagram\nMeta Ads\nMeta Catalogue\nYouTube\nGmail\nOutlook\nGoogle Ads\nTikTok\nLinkedIn\nTwitter",
    "reqd": 1
   },
   {
@@ -207,6 +210,26 @@
    "fieldname": "last_inbound_event_at",
    "fieldtype": "Datetime",
    "label": "Last Inbound Event At",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.platform === 'Outlook'",
+   "fieldname": "graph_section",
+   "fieldtype": "Section Break",
+   "label": "Graph Subscription"
+  },
+  {
+   "description": "Microsoft Graph change-notification subscription id for this mailbox. Empty = push not registered; the delta poll cron still covers ingestion.",
+   "fieldname": "graph_subscription_id",
+   "fieldtype": "Data",
+   "label": "Graph Subscription ID",
+   "read_only": 1
+  },
+  {
+   "description": "Graph expires mail subscriptions after ~3 days (4230 min max). renew_graph_subscriptions() re-ups daily.",
+   "fieldname": "graph_subscription_expiry",
+   "fieldtype": "Datetime",
+   "label": "Graph Subscription Expiry",
    "read_only": 1
   }
  ],

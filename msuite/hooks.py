@@ -54,6 +54,11 @@ scheduler_events = {
         # so Pub/Sub push ingestion keeps flowing (no-op without
         # gmail_pubsub_topic in site config).
         "msuite.api.v1.gmail_relay.renew_gmail_watches",
+        # Graph mail subscriptions expire after ~3 days (4230 min max) —
+        # renew daily and register push for any Outlook mailbox that has
+        # none yet. No-op unless the notification URL is public HTTPS;
+        # delta polling covers ingestion either way.
+        "msuite.services.mail.graph_subscriptions.renew_graph_subscriptions",
     ]
 }
 

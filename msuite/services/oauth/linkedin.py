@@ -48,8 +48,6 @@ LI_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LI_API = "https://api.linkedin.com"
 LI_VERSION = "202605"  # matches the client app's platform_capabilities.API_VERSION
 
-# Union of member + organization scopes. Both modes request all of them so a
-# single consent covers posting as the person and as their pages.
 LI_SCOPES = [
     "openid",
     "profile",
@@ -57,23 +55,39 @@ LI_SCOPES = [
     "w_member_social",
     "r_organization_social",
     "w_organization_social",
+    "r_organization_admin",
     "rw_organization_admin",
+    "r_ads",
+    "rw_ads",
+    "r_ads_reporting",
+    "r_basicprofile",
+    "r_1st_connections_size",
+    "r_marketing_leadgen_automation",
+    "r_ads_leadgen_automation",
+    "rw_events",
+    "r_events",
 ]
 
 TOKEN_LIFETIME_SECONDS = 5_184_000  # 60 days
 
 MODE_PROFILE = "profile"
 MODE_PAGE = "page"
+MODE_ADS = "ads"
 
 
 def _mode_from_state(state_data: dict) -> str:
     """Map the requested platform key to an entity mode.
 
-    The registry keeps three keys (`linkedin`, `linkedin_profile`,
-    `linkedin_page`) purely to carry this intent — they all resolve to this
+    The registry keeps four keys (`linkedin`, `linkedin_profile`,
+    `linkedin_page`, `linkedin_ads`) purely to carry this intent — they all resolve to this
     module and read the same MSuite App.
     """
-    return MODE_PAGE if state_data.get("platform") == "linkedin_page" else MODE_PROFILE
+    platform = state_data.get("platform")
+    if platform == "linkedin_page":
+        return MODE_PAGE
+    if platform in ("linkedin_ads", "ads"):
+        return MODE_ADS
+    return MODE_PROFILE
 
 
 def _rest_headers(token: str) -> dict:
@@ -131,14 +145,17 @@ def exchange_token(code: str, state_data: dict) -> dict:
 
 
 def discover_accounts(client_name: str, token_data: dict):
-    """Profile mode connects immediately; page mode defers to a user choice.
+    """Profile/Ads mode connects immediately; page mode defers to a user choice.
 
-    Returns a list of connected accounts (profile mode) or a dict with
+    Returns a list of connected accounts (profile/ads mode) or a dict with
     `pending=True` and the candidate pages (page mode). `process_oauth_callback`
     branches on the shape.
     """
-    if token_data.get("mode") == MODE_PAGE:
+    mode = token_data.get("mode")
+    if mode == MODE_PAGE:
         return _discover_page_candidates(token_data)
+    if mode == MODE_ADS:
+        return _connect_ads(client_name, token_data)
     return _connect_profile(client_name, token_data)
 
 
@@ -274,6 +291,162 @@ def _store_account(
         "token_expires_at": str(expiry),
         "avatar_url": avatar_url,
     })
+
+
+def _connect_ads(client_name: str, token_data: dict) -> list[dict]:
+    token = token_data["access_token"]
+    expires_in = token_data.get("expires_in", TOKEN_LIFETIME_SECONDS)
+    refresh_value = token_data.get("refresh_token", "")
+    expiry = add_to_date(now(), seconds=expires_in)
+
+    user_info = _get_user_info(token)
+    person_sub = user_info.get("sub", "")
+    person_name = user_info.get("name", "")
+    person_picture = user_info.get("picture", "")
+
+    auth_name = upsert_auth_account(client_name, Platform.LINKEDIN, person_sub or "linkedin_ads", {
+        "account_name": person_name or "LinkedIn Ads",
+        "profile_picture_url": person_picture,
+    })
+
+    ad_accounts = _get_ad_accounts(token)
+    connected = []
+    if ad_accounts:
+        for acc in ad_accounts:
+            raw_id = str(acc.get("id") or acc.get("account_id") or "")
+            acc_id = raw_id.replace("urn:li:sponsoredAccount:", "")
+            acc_name = acc.get("name") or acc.get("account_name") or f"LinkedIn Ads ({acc_id})"
+            currency = acc.get("currency") or "USD"
+
+            upsert_connected_account(client_name, Platform.LINKEDIN, f"urn:li:sponsoredAccount:{acc_id}", {
+                "display_name": acc_name,
+                "auth_account": auth_name,
+                "access_token": token,
+                "refresh_token": refresh_value,
+                "token_type": "User Token",
+                "msuite_app": token_data.get("app_name", ""),
+                "token_expiry": expiry,
+            })
+
+            push_account_to_client(client_name, "LinkedIn Ads", {
+                "ad_account_id": acc_id,
+                "ad_account_name": acc_name,
+                "currency": currency,
+                "access_token": token,
+                "refresh_token": refresh_value,
+                "token_expires_at": str(expiry),
+            })
+            connected.append({"platform": "LinkedIn Ads", "name": acc_name})
+    else:
+        acc_id = person_sub or "default"
+        acc_name = f"{person_name}'s LinkedIn Ad Account" if person_name else "LinkedIn Ad Account"
+        upsert_connected_account(client_name, Platform.LINKEDIN, f"urn:li:sponsoredAccount:{acc_id}", {
+            "display_name": acc_name,
+            "auth_account": auth_name,
+            "access_token": token,
+            "refresh_token": refresh_value,
+            "token_type": "User Token",
+            "msuite_app": token_data.get("app_name", ""),
+            "token_expiry": expiry,
+        })
+        push_account_to_client(client_name, "LinkedIn Ads", {
+            "ad_account_id": acc_id,
+            "ad_account_name": acc_name,
+            "currency": "USD",
+            "access_token": token,
+            "refresh_token": refresh_value,
+            "token_expires_at": str(expiry),
+        })
+        connected.append({"platform": "LinkedIn Ads", "name": acc_name})
+
+    return connected
+
+
+def _get_ad_accounts(token: str) -> list[dict]:
+    headers = _rest_headers(token)
+
+    # 1. Try /rest/adAccounts?q=search
+    try:
+        resp = requests.get(
+            f"{LI_API}/rest/adAccounts?q=search",
+            headers=headers,
+            timeout=30,
+        )
+        if resp.ok:
+            data = resp.json()
+            elements = data.get("elements", [])
+            if elements:
+                return elements
+    except Exception as e:
+        logger.error(f"LinkedIn /rest/adAccounts failed: {e}")
+
+    # 2. Try /rest/adAccountUsers?q=authenticatedUser (accounts user has roles in)
+    try:
+        resp = requests.get(
+            f"{LI_API}/rest/adAccountUsers?q=authenticatedUser",
+            headers=headers,
+            timeout=30,
+        )
+        if resp.ok:
+            data = resp.json()
+            account_users = data.get("elements", [])
+            accounts = []
+            for au in account_users:
+                urn = au.get("account", "")
+                acc_id = urn.split(":")[-1] if ":" in urn else urn
+                if not acc_id:
+                    continue
+                info = _get_single_ad_account(token, acc_id)
+                if info:
+                    accounts.append(info)
+                else:
+                    accounts.append({"id": acc_id, "name": f"LinkedIn Ad Account ({acc_id})"})
+            if accounts:
+                return accounts
+    except Exception as e:
+        logger.error(f"LinkedIn /rest/adAccountUsers failed: {e}")
+
+    # 3. Try /v2/adAccountsV2?q=search
+    try:
+        resp2 = requests.get(
+            f"{LI_API}/v2/adAccountsV2?q=search",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp2.ok:
+            data = resp2.json()
+            elements = data.get("elements", [])
+            if elements:
+                return elements
+    except Exception as e:
+        logger.error(f"LinkedIn /v2/adAccountsV2 failed: {e}")
+
+    return []
+
+
+def _get_single_ad_account(token: str, acc_id: str) -> dict:
+    headers = _rest_headers(token)
+    try:
+        resp = requests.get(
+            f"{LI_API}/rest/adAccounts/{acc_id}",
+            headers=headers,
+            timeout=30,
+        )
+        if resp.ok:
+            return resp.json()
+    except Exception:
+        pass
+    try:
+        resp = requests.get(
+            f"{LI_API}/v2/adAccountsV2/{acc_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        if resp.ok:
+            return resp.json()
+    except Exception:
+        pass
+    return {}
 
 
 # ── Token refresh ────────────────────────────────────────────────────────

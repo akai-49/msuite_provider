@@ -17,6 +17,7 @@ _FEATURE_TYPE_NUMERIC = "Numeric"
 ADS_PRODUCT_FEATURES = [
     {"feature_key": "ads_meta",                 "feature_label": "Meta Ads",                        "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 10},
     {"feature_key": "ads_google",               "feature_label": "Google Ads",                      "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 20},
+    {"feature_key": "ads_linkedin",             "feature_label": "LinkedIn Ads",                    "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 25},
     {"feature_key": "ads_lead_gen",             "feature_label": "Meta Lead Gen Forms",             "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 30},
     {"feature_key": "ads_advanced_targeting",   "feature_label": "Custom / Lookalike Audiences",    "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 40},
     {"feature_key": "ads_insights",             "feature_label": "Async insights sync",             "feature_type": _FEATURE_TYPE_BOOLEAN, "display_order": 50},
@@ -50,6 +51,7 @@ ADS_PLAN_FEATURES = {
     "ADS-TRIAL": {
         "ads_meta":                 (True,  None, None),
         "ads_google":               (False, None, None),
+        "ads_linkedin":             (True,  None, None),
         "ads_lead_gen":             (True,  None, None),
         "ads_advanced_targeting":   (False, None, None),
         "ads_insights":             (True,  None, None),
@@ -62,6 +64,7 @@ ADS_PLAN_FEATURES = {
     "ADS-BASIC": {
         "ads_meta":                 (True,  None, None),
         "ads_google":               (True,  None, None),
+        "ads_linkedin":             (True,  None, None),
         "ads_lead_gen":             (True,  None, None),
         "ads_advanced_targeting":   (False, None, None),
         "ads_insights":             (True,  None, None),
@@ -74,6 +77,7 @@ ADS_PLAN_FEATURES = {
     "ADS-PRO": {
         "ads_meta":                 (True,  None, None),
         "ads_google":               (True,  None, None),
+        "ads_linkedin":             (True,  None, None),
         "ads_lead_gen":             (True,  None, None),
         "ads_advanced_targeting":   (True,  None, None),
         "ads_insights":             (True,  None, None),
@@ -86,6 +90,7 @@ ADS_PLAN_FEATURES = {
     "ADS-BIZ": {
         "ads_meta":                 (True,  None, None),
         "ads_google":               (True,  None, None),
+        "ads_linkedin":             (True,  None, None),
         "ads_lead_gen":             (True,  None, None),
         "ads_advanced_targeting":   (True,  None, None),
         "ads_insights":             (True,  None, None),
@@ -98,6 +103,7 @@ ADS_PLAN_FEATURES = {
     "ADS-ENT": {
         "ads_meta":                 (True,  None, None),
         "ads_google":               (True,  None, None),
+        "ads_linkedin":             (True,  None, None),
         "ads_lead_gen":             (True,  None, None),
         "ads_advanced_targeting":   (True,  None, None),
         "ads_insights":             (True,  None, None),

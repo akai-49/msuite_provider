@@ -185,20 +185,25 @@ def _build_page_business_map(
 
 def _fetch_page_detail(page_id: str, user_token: str) -> dict | None:
     """Fetch individual Page details including access_token directly from Page node."""
-    try:
-        resp = requests.get(
-            f"{GRAPH_API_BASE}/{page_id}",
-            params={
-                "access_token": user_token,
-                "fields":       "id,name,access_token,category,picture,business",
-            },
-            timeout=15,
-        )
-        data = resp.json()
-        if data.get("id") and data.get("access_token"):
-            return data
-    except Exception as e:
-        logger.warning(f"Page detail fetch failed for page {page_id}: {e}")
+    for field_list in (
+        "id,name,access_token,category,picture",
+        "id,name,access_token,category,picture,business",
+        "id,name,access_token",
+    ):
+        try:
+            resp = requests.get(
+                f"{GRAPH_API_BASE}/{page_id}",
+                params={
+                    "access_token": user_token,
+                    "fields":       field_list,
+                },
+                timeout=15,
+            )
+            data = resp.json()
+            if data.get("id") and (data.get("name") or data.get("access_token")):
+                return data
+        except Exception as e:
+            logger.warning(f"Page detail fetch failed for page {page_id}: {e}")
     return None
 
 
@@ -222,18 +227,29 @@ def _discover_pages_and_instagram(
             f"{GRAPH_API_BASE}/me/accounts",
             params={
                 "access_token": user_token,
-                "fields":       "id,name,access_token,category,picture,business",
+                "fields":       "id,name,access_token,category,picture",
                 "limit":        200,
             },
             timeout=30,
         )
-        for page in resp.json().get("data", []):
-            if page.get("id"):
-                pages_dict[page["id"]] = page
+        if resp.status_code == 200:
+            for page in resp.json().get("data", []):
+                if page.get("id"):
+                    pages_dict[page["id"]] = page
     except Exception as e:
         logger.error(f"Failed to discover personal Facebook Pages (/me/accounts): {e}")
 
-    # 2. Collect pages from Business Manager / Business Suite (owned_pages & client_pages)
+    # 2. Also query any explicitly granted Page IDs from granular_target_ids (e.g. standalone/NPE pages)
+    if granular_target_ids:
+        for tid in granular_target_ids:
+            if not tid or tid.startswith("act_") or tid in pages_dict or tid in biz_auth_map:
+                continue
+            p_data = _fetch_page_detail(tid, user_token)
+            if p_data and p_data.get("id") and (p_data.get("name") or p_data.get("access_token")):
+                pages_dict[p_data["id"]] = p_data
+                logger.info(f"Discovered standalone page {p_data.get('name', tid)} ({p_data['id']}) via granular target ID")
+
+    # 3. Collect pages from Business Manager / Business Suite (owned_pages & client_pages)
     for endpoint in ("owned_pages", "client_pages"):
         for biz in businesses:
             biz_id = biz.get("id")
@@ -256,7 +272,7 @@ def _discover_pages_and_instagram(
             except Exception as e:
                 logger.warning(f"Failed to fetch {endpoint} for business {biz_id}: {e}")
 
-    # 3. Process all unique discovered Pages
+    # 4. Process all unique discovered Pages
     for page_id, page in pages_dict.items():
         page_name  = page.get("name", "")
         page_token = page.get("access_token", "")
@@ -269,14 +285,8 @@ def _discover_pages_and_instagram(
         biz_id       = direct_biz_id or biz_info.get("business_id", "")
         biz_name     = direct_biz_name or biz_info.get("business_name", "")
 
-        # If user selected specific pages/businesses in Meta's consent popup, restrict to those IDs
-        if granular_target_ids:
-            matches_page = page_id in granular_target_ids
-            matches_business = bool(biz_id and biz_id in granular_target_ids)
-            if not (matches_page or matches_business):
-                logger.info(f"Skipping Page {page_name} ({page_id}): not selected by user in Meta consent dialog.")
-                continue
 
+        token_type = "Page Token"
         if not page_token:
             page_detail = _fetch_page_detail(page_id, user_token)
             if page_detail and page_detail.get("access_token"):
@@ -290,19 +300,19 @@ def _discover_pages_and_instagram(
                     biz_name = direct_biz_name or biz_name
 
         if not page_token:
-            logger.warning(f"Skipping Page {page_name} ({page_id}): no access_token available")
-            continue
+            page_token = user_token
+            token_type = "User Token"
+            logger.info(f"Page {page_name} ({page_id}): using user_token as fallback")
 
         avatar_url = f"https://graph.facebook.com/{page_id}/picture?type=large"
-
-        auth_account = biz_info.get("auth_account")
+        auth_account = biz_info.get("auth_account") or (biz_auth_map.get(biz_id) if biz_id else None)
 
         ca_name = upsert_connected_account(
             client_name, Platform.FACEBOOK, page_id, {
                 "display_name":  page_name,
                 "auth_account":  auth_account,
                 "access_token":  page_token,
-                "token_type":    "Page Token",
+                "token_type":    token_type,
                 "msuite_app":    app_name,
                 "token_expiry":  add_to_date(now(), seconds=expires_in),
             },
@@ -327,7 +337,7 @@ def _discover_pages_and_instagram(
 
         ig_result = _discover_instagram_for_page(
             client_name, page_id, page_name, page_token, user_token,
-            app_name, expires_in, biz_id, auth_account,
+            app_name, expires_in, biz_id, biz_name=biz_name, auth_account=auth_account,
         )
         if ig_result:
             connected.append(ig_result)
@@ -344,6 +354,7 @@ def _discover_instagram_for_page(
     app_name: str,
     expires_in: int,
     biz_id: str,
+    biz_name: str = "",
     auth_account: str | None = None,
 ) -> dict | None:
     """Check a page for a linked Instagram Business Account; upsert + push."""

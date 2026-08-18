@@ -42,7 +42,7 @@ LONG_LIVED_TOKEN_TTL = 5_184_000
 # ---------------------------------------------------------------------------
 
 
-def build_facebook_login_url(scopes: list[str], state: str) -> str:
+def build_facebook_login_url(scopes: list[str], state: str, auth_type: str = "rerequest") -> str:
     """Build the Facebook OAuth dialog URL for an arbitrary scope list.
 
     Callers own their scope list so Meta's consent dialog only requests
@@ -55,6 +55,7 @@ def build_facebook_login_url(scopes: list[str], state: str) -> str:
         "state":         state,
         "scope":         ",".join(scopes),
         "response_type": "code",
+        "auth_type":     auth_type,
     }
     return (
         f"https://www.facebook.com/{GRAPH_API_VERSION}"

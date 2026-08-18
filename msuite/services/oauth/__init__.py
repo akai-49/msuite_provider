@@ -42,6 +42,7 @@ from . import meta_all
 from . import meta_catalogue
 from . import meta_social
 from . import meta_whatsapp
+from . import microsoft
 from . import twitter
 
 # Not a platform handler — shared Meta plumbing, never in the registries
@@ -72,11 +73,13 @@ _AUTH_URL_BUILDERS = {
     "linkedin":          linkedin.build_auth_url,
     "linkedin_page":     linkedin.build_auth_url,
     "linkedin_profile":  linkedin.build_auth_url,
+    "linkedin_ads":      linkedin.build_auth_url,
     "twitter":     twitter.build_auth_url,
     "google":      google.build_auth_url,
     "google_youtube": google.build_auth_url,
     "google_gmail": google.build_auth_url,
     "google_ads":   google.build_auth_url,
+    "microsoft_outlook": microsoft.build_auth_url,
 }
 
 _TOKEN_EXCHANGERS = {
@@ -87,11 +90,13 @@ _TOKEN_EXCHANGERS = {
     "linkedin":          linkedin.exchange_token,
     "linkedin_page":     linkedin.exchange_token,
     "linkedin_profile":  linkedin.exchange_token,
+    "linkedin_ads":      linkedin.exchange_token,
     "twitter":     twitter.exchange_token,
     "google":      google.exchange_token,
     "google_youtube": google.exchange_token,
     "google_gmail": google.exchange_token,
     "google_ads":   google.exchange_token,
+    "microsoft_outlook": microsoft.exchange_token,
 }
 
 _ACCOUNT_DISCOVERERS = {
@@ -102,11 +107,13 @@ _ACCOUNT_DISCOVERERS = {
     "linkedin":          linkedin.discover_accounts,
     "linkedin_page":     linkedin.discover_accounts,
     "linkedin_profile":  linkedin.discover_accounts,
+    "linkedin_ads":      linkedin.discover_accounts,
     "twitter":     twitter.discover_accounts,
     "google":      google.discover_accounts,
     "google_youtube": google.discover_accounts,
     "google_gmail": google.discover_accounts,
     "google_ads":   google.discover_accounts,
+    "microsoft_outlook": microsoft.discover_accounts,
 }
 
 _TOKEN_REFRESHERS = {
@@ -120,6 +127,9 @@ _TOKEN_REFRESHERS = {
     "YouTube":   google.refresh_token_fn,
     "Google Ads": google.refresh_token_fn,
     "Gmail":      google.refresh_token_fn,
+    # Not google.refresh_token_fn — Microsoft rotates the refresh token and
+    # the new one must be persisted. See microsoft.refresh_token_fn.
+    "Outlook":    microsoft.refresh_token_fn,
 }
 
 

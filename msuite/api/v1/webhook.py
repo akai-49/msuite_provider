@@ -721,7 +721,7 @@ def receive_gmail_push(**kwargs):
         "msuite.api.v1.webhook.forward_webhook_job",
         queue="short",
         client_name=client_doc.name,
-        endpoint="msuite_workspace.inbox.api.v1.email_ingest.receive_inbound_push",
+        endpoint="msuite_workspace.msuite_email.api.email_ingest.receive_inbound_push",
         payload={
             "gmail_address": email_address,
             "history_id": history_id,

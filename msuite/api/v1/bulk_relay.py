@@ -40,12 +40,28 @@ from msuite.utils.validators import (
 
 RELAY_TOKEN_HEADER = "X-MSuite-Relay-Token"
 
-# Where each gateway's receipts land on the client.
+# Where a payload lands on the client, keyed `(provider, kind)`.
+#
+# The `kind` half is load-bearing for SMS: an inbound reply and a delivery
+# receipt arrive at the same gateway URL but are two different client
+# functions, with different parsing and different side effects (a reply can
+# carry STOP and opt the number out). Routing both to `receive_dlr` would drop
+# every inbound SMS silently.
+#
+# Meta needs no split — the client's `feed_whatsapp_payload` already branches
+# on `value.messages[]` vs `value.statuses[]` internally, and one payload can
+# legitimately carry both.
 _CLIENT_ENDPOINT = {
-	"msg91": "msuite_workspace.sms.api.v1.webhook.receive_dlr",
-	"twilio": "msuite_workspace.sms.api.v1.webhook.receive_dlr",
-	"meta": "msuite_workspace.inbox.api.v1.webhook.receive",
-	"ses": "msuite_workspace.msuite_email.api.email_tracking.receive_ses_notification",
+	("msg91", "dlr"): "msuite_workspace.sms.api.v1.webhook.receive_dlr",
+	("msg91", "chat"): "msuite_workspace.sms.api.v1.webhook.receive_inbound",
+	("twilio", "dlr"): "msuite_workspace.sms.api.v1.webhook.receive_dlr",
+	("twilio", "chat"): "msuite_workspace.sms.api.v1.webhook.receive_inbound",
+	# Legacy URL, kept stable on purpose (see that module's docstring). It
+	# authenticates with PROVIDER auth, not Meta's signature — which the relay
+	# supplies anyway via make_auth_headers.
+	("meta", "dlr"): "msuite_workspace.api.v1.whatsapp.webhook.webhook",
+	("meta", "chat"): "msuite_workspace.api.v1.whatsapp.webhook.webhook",
+	("ses", "dlr"): "msuite_workspace.msuite_email.api.email_tracking.receive_ses_notification",
 }
 
 
@@ -72,10 +88,13 @@ def relay_webhook(**kwargs):
 
 	provider = (headers.get("x-msuite-relay-provider") or "").strip().lower()
 	route = (headers.get("x-msuite-relay-route") or "").strip()
+	kind = (headers.get("x-msuite-relay-kind") or "dlr").strip().lower()
 
-	endpoint = _CLIENT_ENDPOINT.get(provider)
+	endpoint = _CLIENT_ENDPOINT.get((provider, kind))
 	if not endpoint:
-		return error_response("UNKNOWN_PROVIDER", f"No client endpoint for {provider!r}")
+		return error_response(
+			"UNKNOWN_PROVIDER", f"No client endpoint for provider={provider!r} kind={kind!r}"
+		)
 
 	client_doc, account = _resolve_route(route)
 	if not client_doc:
@@ -98,7 +117,7 @@ def relay_webhook(**kwargs):
 	if not ok:
 		return error_response("FORWARD_FAILED", error)
 
-	return success_response({"forwarded": True, "client": client_doc.name})
+	return success_response({"forwarded": True, "client": client_doc.name, "kind": kind})
 
 
 def _relay_authorised(headers: dict) -> bool:

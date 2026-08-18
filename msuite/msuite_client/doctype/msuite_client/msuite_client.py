@@ -353,6 +353,20 @@ def _build_gmail_payload(ca, token: str) -> dict | None:
     }
 
 
+def _build_outlook_payload(ca, token: str) -> dict | None:
+    """Mirror of the Outlook credential push in oauth/microsoft.py — the daily
+    token-refresh cron uses this to keep the client's Email Account token
+    fresh. refresh_token / app_secret are NEVER included."""
+    if not ca.account_id:
+        return None
+    return {
+        "outlook_address": ca.account_id,
+        "display_name": ca.display_name or ca.account_id,
+        "access_token": token,
+        "token_expires_at": str(ca.token_expiry or ""),
+    }
+
+
 def _build_youtube_payload(ca, token: str) -> dict | None:
     """Mirror of the YouTube credential push in oauth/google.py — keeps the
     client's Social Account token fresh after a cron/on-demand refresh."""
@@ -385,6 +399,7 @@ _PUSH_PAYLOAD_BUILDERS = {
     "Instagram": _build_instagram_payload,
     "Meta Ads":  _build_meta_ads_payload,
     "Gmail":     _build_gmail_payload,
+    "Outlook":   _build_outlook_payload,
     "YouTube":   _build_youtube_payload,
 }
 

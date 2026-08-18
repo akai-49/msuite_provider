@@ -79,9 +79,16 @@ def send_email(**kwargs):
             return error_response("TOKEN_REFRESH_FAILED", f"Could not refresh Gmail token: {str(e)}")
 
     access_token = ca.get_password("access_token")
+    return send_via_gmail(access_token, gmail_address, data)
 
+
+def send_via_gmail(access_token: str, gmail_address: str, data: dict):
+    """MIME construction + Gmail send. Shared with `api/v1/mail_relay.py`,
+    which owns the generic auth/account/refresh preamble for both providers.
+    Returns an already-wrapped success_response/error_response."""
     # 5. Construct MIME message
     try:
+        thread_id = data.get("thread_id")
         msg = MIMEMultipart("alternative")
         msg["Subject"] = data.get("subject", "")
         msg["From"] = f"{data.get('from_name') or gmail_address} <{gmail_address}>"
@@ -106,7 +113,6 @@ def send_email(**kwargs):
             else:
                 msg["Bcc"] = bcc_list
 
-        thread_id = data.get("thread_id")
         in_reply_to = data.get("in_reply_to")
         if in_reply_to:
             msg["In-Reply-To"] = in_reply_to
@@ -228,6 +234,12 @@ def poll_new_messages(**kwargs):
             return error_response("TOKEN_REFRESH_FAILED", f"Could not refresh Gmail token: {str(e)}")
 
     access_token = ca.get_password("access_token")
+    return poll_gmail(access_token, history_id)
+
+
+def poll_gmail(access_token: str, history_id=None):
+    """Gmail history/list polling. Shared with `api/v1/mail_relay.py`.
+    Returns an already-wrapped success_response/error_response."""
     headers = {"Authorization": f"Bearer {access_token}"}
 
     # Fetch messages. If history_id is provided, use the Gmail History list API,
@@ -371,6 +383,31 @@ def _fetch_message_details(message_id: str, headers: dict) -> dict | None:
     }
 
 
+def fetch_gmail_attachment(access_token: str, message_id: str, attachment_id: str) -> dict:
+    """Download one Gmail attachment's bytes.
+
+    Returns {content: <standard base64>, ...} — Gmail encodes with the
+    URL-safe alphabet, so it is re-encoded here to match the Graph backend
+    and give the client one contract (see G8 in the connector plan).
+    """
+    resp = requests.get(
+        f"https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}/attachments/{attachment_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Gmail attachment fetch failed: HTTP {resp.status_code} {resp.text[:300]}")
+
+    data = resp.json()
+    raw = base64.urlsafe_b64decode(data.get("data") or "")
+    return {
+        "content": base64.b64encode(raw).decode("ascii"),
+        "filename": "",  # Gmail returns bytes only; the name came with the message metadata
+        "mime_type": "",
+        "size": data.get("size") or len(raw),
+    }
+
+
 # ── Gmail push (users.watch) registration ────────────────────────────────
 #
 # Google Pub/Sub push only fires for mailboxes that have an active
@@ -418,9 +455,10 @@ def register_gmail_watch(connected_account_name: str) -> dict | None:
         )
         return None
 
-    data = resp.json()
-    ca.db_set("history_id", data.get("historyId"), update_modified=False) if hasattr(ca, "history_id") else None
-    return data
+    # The historyId in the watch response is deliberately dropped: MSuite
+    # Connected Account has no cursor field, and the client keeps its own
+    # (MSuite Email Account.history_id) which is the one poll_new_messages reads.
+    return resp.json()
 
 
 def renew_gmail_watches() -> None:
