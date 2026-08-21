@@ -34,7 +34,10 @@ cypress/screenshots/
 cypress/videos/
 
 # Temporary scratch/test/debug scripts
-test_*.py
+# NOTE: test_*.py is NOT ignored — Frappe's bench test runner requires that
+# exact filename prefix for real doctype/module tests (msuite/tests/test_*.py,
+# */doctype/*/test_*.py). Ignoring it silently drops the whole test suite
+# from version control. Ad-hoc scratch scripts should use debug_/scratch_/tmp_.
 debug_*.py
 scratch_*.py
 tmp_*.py
