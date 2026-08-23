@@ -15,6 +15,7 @@
   "cb_resources",
   "presign_expiry_seconds",
   "max_manifest_bytes",
+  "min_recipient_threshold",
   "sec_phase4",
   "api_gateway_base_url",
   "analytics_api_key",
@@ -88,6 +89,13 @@
    "fieldname": "max_manifest_bytes",
    "fieldtype": "Int",
    "label": "Max Manifest Bytes"
+  },
+  {
+   "default": "500",
+   "description": "Campaigns with recipients <= this threshold route via the client's Frappe Standard engine. Campaigns with > threshold recipients route via AWS.",
+   "fieldname": "min_recipient_threshold",
+   "fieldtype": "Int",
+   "label": "Min Recipient Threshold (Standard Engine Limit)"
   },
   {
    "fieldname": "sec_phase4",

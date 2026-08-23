@@ -28,6 +28,8 @@ class MSuiteAWSSettings(Document):
 	def validate(self):
 		if self.presign_expiry_seconds and not (60 <= self.presign_expiry_seconds <= 3600):
 			frappe.throw(_("Presign Expiry must be between 60 and 3600 seconds."))
+		if self.min_recipient_threshold is not None and self.min_recipient_threshold < 1:
+			frappe.throw(_("Min Recipient Threshold must be at least 1."))
 
 	@frappe.whitelist()
 	def test_connection(self) -> dict:

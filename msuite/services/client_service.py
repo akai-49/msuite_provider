@@ -97,6 +97,15 @@ def build_client_plan_data(customer: str) -> dict:
         "features": enriched_features,
     }
 
+    # Include AWS min recipient threshold from MSuite AWS Settings if configured
+    try:
+        aws_settings = frappe.get_cached_doc("MSuite AWS Settings")
+        threshold = aws_settings.get("min_recipient_threshold")
+        if threshold is not None:
+            payload["aws_min_recipient_threshold"] = int(threshold)
+    except Exception:
+        pass
+
     # Entitlements are Redis-cached with a TTL, so right after a deploy we can
     # still be handed a pre-Phase-1 dict with no `active_products`. Emitting
     # `products: []` there would lock every module on the client; omitting the
