@@ -262,3 +262,62 @@ def _check_plan(client_doc, recipient_count: int) -> tuple[bool, str]:
 		return False, f"Blast of {recipient_count} exceeds the plan limit of {limit}"
 
 	return True, ""
+
+
+@frappe.whitelist(allow_guest=True)
+def sync_channel_secret(**kwargs):
+	"""Create or update a client channel credentials secret in AWS Secrets Manager.
+
+	Payload:
+	  {client_name, channel, credentials}
+
+	Returns:
+	  {ok: True, secret_name: ...}
+	"""
+	data = _payload(kwargs)
+
+	client_name = data.get("client_name")
+	channel = (data.get("channel") or "").strip().lower()
+	credentials = data.get("credentials") or {}
+
+	if not client_name or not channel:
+		return error_response("INVALID_REQUEST", "client_name and channel are required")
+	if channel not in _CHANNELS:
+		return error_response("INVALID_REQUEST", f"channel must be one of {', '.join(_CHANNELS)}")
+	if not credentials or not isinstance(credentials, dict):
+		return error_response("INVALID_REQUEST", "credentials dict is required")
+
+	try:
+		client_doc = require_msuite_client_auth(client_name)
+	except Exception as e:
+		return error_response("AUTH_FAILED", str(e))
+
+	try:
+		get_settings()
+	except Exception as e:
+		return error_response("NOT_ENABLED", str(e))
+
+	client_code = client_doc.client_code or client_doc.name
+	secret_name = secret_id_for(client_code, channel)
+
+	session = boto_session()
+	sm = session.client("secretsmanager")
+	secret_str = json.dumps(credentials)
+
+	try:
+		try:
+			sm.put_secret_value(SecretId=secret_name, SecretString=secret_str)
+			frappe.logger().info(f"aws secretsmanager: updated secret {secret_name} for client {client_doc.name}")
+		except sm.exceptions.ResourceNotFoundException:
+			sm.create_secret(
+				Name=secret_name,
+				Description=f"MSuite gateway credentials for client {client_doc.name} ({channel})",
+				SecretString=secret_str,
+			)
+			frappe.logger().info(f"aws secretsmanager: created secret {secret_name} for client {client_doc.name}")
+	except Exception as e:
+		frappe.log_error(title=f"AWS Secrets Manager sync failed for {secret_name}", message=frappe.get_traceback())
+		return error_response("SECRET_SYNC_FAILED", str(e)[:300])
+
+	return success_response({"ok": True, "secret_name": secret_name})
+

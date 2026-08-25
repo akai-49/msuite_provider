@@ -52,11 +52,12 @@ def get_customer_entitlements(customer: str) -> dict:
     # Collect all MSuite Plan names we need to resolve
     msuite_plan_names: set[str] = set()
 
-    # Load Active Subscriptions
-    subscriptions = frappe.get_list(
+    # Load Active Subscriptions (ignore_permissions=True because client API calls run under Guest)
+    subscriptions = frappe.get_all(
         "Subscription",
         filters={"party_type": "Customer", "party": customer, "status": ["in", ["Active", "Trialing"]]},
         fields=["name"],
+        ignore_permissions=True,
     )
 
     # Resolve each subscription's MSuite plans in a single pass — load each
@@ -75,10 +76,11 @@ def get_customer_entitlements(customer: str) -> dict:
                 sub_msuite_plans.append(msuite_plan)
 
     # Load Active Customer Grants
-    grants = frappe.get_list(
+    grants = frappe.get_all(
         "MSuite Customer Grant",
         filters={"customer": customer, "status": GrantStatus.ACTIVE},
         fields=["name", "granted_plan", "grant_type", "expires_on"],
+        ignore_permissions=True,
     )
 
     for grant in grants:
@@ -90,10 +92,11 @@ def get_customer_entitlements(customer: str) -> dict:
     plan_name_map: dict[str, str] = {}
     plan_product_map: dict[str, str] = {}
     if msuite_plan_names:
-        plan_rows = frappe.get_list(
+        plan_rows = frappe.get_all(
             "MSuite Plan",
             filters={"name": ["in", list(msuite_plan_names)]},
             fields=["name", "plan_name", "product"],
+            ignore_permissions=True,
         )
         plan_name_map = {r.name: r.plan_name for r in plan_rows}
         plan_product_map = {r.name: r.product for r in plan_rows if r.product}

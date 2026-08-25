@@ -44,6 +44,7 @@ def on_subscription_created(doc, method):
 
         sync_groups_for_subscription(doc.name, "add")
         invalidate_entitlement_cache(doc.party)
+        _push_plan_to_customer_clients(doc.party)
 
     except Exception:
         frappe.log_error(
@@ -85,13 +86,48 @@ def on_subscription_update(doc, method):
         ):
             from msuite.services.trial_service import transition_trial_to_paid
             transition_trial_to_paid(doc.name)
-            logger.info(f"Trial-to-paid transition for {doc.name}")
+        # Invalidate entitlement cache for this customer so new plans/grants take effect
+        from msuite.utils.cache import invalidate_entitlement_cache
+        invalidate_entitlement_cache(doc.party)
+
+        # Push fresh plan data to any active MSuite Client instances for this customer
+        _push_plan_to_customer_clients(doc.party)
 
     except Exception:
         frappe.log_error(
             frappe.get_traceback(),
             f"MSuite: on_subscription_update error for {doc.name}",
         )
+
+
+def _push_plan_to_customer_clients(customer: str):
+    """Push fresh plan data to all active MSuite Client instances linked to this customer."""
+    try:
+        from msuite.services.client_service import build_client_plan_data, push_plan_to_client
+        from msuite.constants import SyncStatus
+        from frappe.utils import now
+
+        clients = frappe.get_all(
+            "MSuite Client",
+            filters={"customer": customer, "status": "Active"},
+            fields=["name"],
+        )
+        if not clients:
+            return
+
+        plan_data = build_client_plan_data(customer)
+        for client in clients:
+            try:
+                client_doc = frappe.get_doc("MSuite Client", client.name)
+                push_plan_to_client(client_doc, plan_data)
+                client_doc.last_sync = now()
+                client_doc.last_sync_status = SyncStatus.SUCCESS
+                client_doc.sync_fail_count = 0
+                client_doc.save(ignore_permissions=True)
+            except Exception as e:
+                logger.warning(f"Could not push plan to client {client.name} on subscription update: {e}")
+    except Exception as e:
+        logger.warning(f"Failed pushing plan to customer {customer} clients: {e}")
 
 
 def _handle_cancellation(doc):
@@ -105,6 +141,7 @@ def _handle_cancellation(doc):
 
     sync_groups_for_subscription(doc.name, "remove")
     invalidate_entitlement_cache(doc.party)
+    _push_plan_to_customer_clients(doc.party)
 
 
 def _is_msuite_managed_subscription(doc) -> bool:

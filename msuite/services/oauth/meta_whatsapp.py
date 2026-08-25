@@ -331,6 +331,21 @@ def _process_waba(
     # Fetch phone numbers
     phone_rows = _fetch_phone_numbers(waba_id, access_token)
 
+    # Fetch business profile picture URL for primary phone
+    avatar_url = ""
+    if phone_rows:
+        try:
+            resp = requests.get(
+                f"{GRAPH_API_BASE}/{phone_rows[0]['phone_number_id']}/whatsapp_business_profile",
+                params={"fields": "profile_picture_url", "access_token": access_token},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                avatar_url = (data[0] if data else {}).get("profile_picture_url", "")
+        except Exception as e:
+            logger.warning(f"Failed to fetch profile_picture_url for phone {phone_rows[0]['phone_number_id']}: {e}")
+
     # The session event is only available in the JS-SDK popup flow. In the
     # redirect flow (`start_whatsapp_embedded_signup`) there is no
     # postMessage, so fall back to what Meta reports about the number.
@@ -386,6 +401,8 @@ def _process_waba(
         "business_name": biz_name or display_name,
         "app_id": meta_app_id,
         "system_user_token": access_token,
+        "avatar_url": avatar_url,
+        "profile_picture_url": avatar_url,
         "is_coexistence": 1 if is_coexistence else 0,
         "phones": [
             {

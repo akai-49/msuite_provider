@@ -127,7 +127,7 @@ def _discover_ad_accounts(
                 url,
                 params={
                     "access_token": user_token,
-                    "fields":       "account_id,name,currency,timezone_name,business,account_status",
+                    "fields":       "account_id,name,currency,timezone_name,business,account_status,user_tasks",
                 },
                 timeout=30,
             )
@@ -142,6 +142,7 @@ def _discover_ad_accounts(
             account_id   = ad.get("account_id", "")
             account_name = ad.get("name", "")
             status       = ad.get("account_status")
+            user_tasks   = ad.get("user_tasks", []) or []
 
             if not account_id:
                 continue
@@ -151,19 +152,29 @@ def _discover_ad_accounts(
                 logger.info(f"Skipping ad account {account_id} ({account_name}): status {status} is disabled/closed.")
                 continue
 
+            # Skip read-only accounts where user cannot advertise or manage
+            if user_tasks and not any(t in user_tasks for t in ("ADVERTISE", "MANAGE", "DRAFT")):
+                logger.info(f"Skipping ad account {account_id} ({account_name}): user_tasks {user_tasks} has only read-only access.")
+                continue
+
+            # Skip accounts explicitly labelled read-only
+            if "(read-only)" in account_name.lower() or "[read-only]" in account_name.lower():
+                logger.info(f"Skipping read-only ad account {account_id} ({account_name}).")
+                continue
+
             ad_biz = ad.get("business") or {}
             biz_id = src_biz_id or str(ad_biz.get("id") or "")
             biz_name = src_biz_name or ad_biz.get("name") or ""
 
-            # If user selected specific ad accounts/businesses in Meta's consent popup, restrict to those IDs
+            # If user selected specific ad accounts/businesses in Meta's consent popup, restrict strictly to those IDs
             if granular_target_ids:
                 matches_account = (
                     account_id in granular_target_ids or
-                    f"act_{account_id}" in granular_target_ids
+                    f"act_{account_id}" in granular_target_ids or
+                    (account_id.startswith("act_") and account_id[4:] in granular_target_ids)
                 )
                 matches_business = bool(biz_id and biz_id in granular_target_ids)
-                is_direct_user_account = not src_biz_id and not biz_id
-                if not (matches_account or matches_business or is_direct_user_account):
+                if not (matches_account or matches_business):
                     logger.info(f"Skipping ad account {account_id} ({account_name}): not selected by user in Meta consent dialog.")
                     continue
 
@@ -205,6 +216,42 @@ def _discover_ad_accounts(
     # 3. Query direct/personal ad accounts from /me/adaccounts
     url = f"{GRAPH_API_BASE}/me/adaccounts"
     _collect_from_url(url, "", "")
+
+    # 4. If granular_target_ids has ad account IDs that weren't discovered yet, query /act_{id} directly
+    if granular_target_ids:
+        for tid in granular_target_ids:
+            clean_id = tid[4:] if tid.startswith("act_") else tid
+            if clean_id not in discovered:
+                act_endpoint = f"{GRAPH_API_BASE}/act_{clean_id}"
+                try:
+                    resp = requests.get(
+                        act_endpoint,
+                        params={
+                            "access_token": user_token,
+                            "fields": "account_id,name,currency,timezone_name,business,account_status,user_tasks",
+                        },
+                        timeout=15,
+                    )
+                    if resp.status_code == 200:
+                        ad = resp.json()
+                        account_name = ad.get("name") or f"Ad Account {clean_id}"
+                        user_tasks = ad.get("user_tasks", []) or []
+                        if ad.get("account_id") and ad.get("account_status") not in DISABLED_ACCOUNT_STATUSES:
+                            if user_tasks and not any(t in user_tasks for t in ("ADVERTISE", "MANAGE", "DRAFT")):
+                                continue
+                            if "(read-only)" in account_name.lower() or "[read-only]" in account_name.lower():
+                                continue
+                            ad_biz = ad.get("business") or {}
+                            discovered[clean_id] = {
+                                "account_id": clean_id,
+                                "account_name": account_name,
+                                "currency": ad.get("currency", ""),
+                                "timezone_name": ad.get("timezone_name", ""),
+                                "business_id": str(ad_biz.get("id") or ""),
+                                "business_name": ad_biz.get("name") or "",
+                            }
+                except Exception as e:
+                    logger.warning(f"Direct ad account fetch for {act_endpoint} failed: {e}")
 
     # Upsert discovered active accounts
     for acc in discovered.values():

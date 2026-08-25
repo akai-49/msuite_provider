@@ -5,6 +5,8 @@ app_description = "SaaS subscription and entitlement management"
 app_email = "dev@msuite.com"
 app_license = "MIT"
 app_version = "1.0.0"
+app_logo_url = "/assets/msuite/images/msuite-logo.png"
+app_icon_url = "/assets/msuite/images/msuite-logo.png"
 
 required_apps = ["erpnext"]
 
