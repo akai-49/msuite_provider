@@ -335,7 +335,7 @@ def get_inbound_config(phone_number: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True)
-def get_config_by_did(did: str) -> dict:
+def get_config_by_did(did: str, call_type: str = "Inbound", **kwargs) -> dict:
     """Route the backend's org-config lookup to the client owning the DID."""
     _require_backend_key()
     client_doc = _resolve_client_by_did(did)
@@ -346,7 +346,7 @@ def get_config_by_did(did: str) -> dict:
         client_doc,
         f"{_CLIENT_APP_PREFIX}.doctype.ai_calling_number_setup"
         ".ai_calling_number_setup.get_config_by_did",
-        {"did": did},
+        {"did": did, "call_type": call_type},
     )
     if isinstance(config, dict):
         config["client_code"] = client_doc.client_code or client_doc.name
@@ -457,3 +457,47 @@ def update_broadcast_recipient(**kwargs) -> dict:
         "NOT_FOUND",
         f"No client site accepted campaign lead update: {last_error}",
     )
+
+
+@frappe.whitelist(allow_guest=True)
+def get_assistant_config_full(assistant: str = None, did: str = None, client_code: str = None, **kwargs) -> dict:
+    """
+    Route get_assistant_config_full to the owning client site.
+    Supports routing by:
+      1. did (phone number)
+      2. explicit client_code
+      3. fallback iteration through active clients
+    """
+    _require_backend_key()
+    assistant = assistant or kwargs.get("assistant") or kwargs.get("name")
+    if not assistant:
+        return error_response("INVALID", "Assistant identifier is required.")
+
+    client_doc = None
+    if did:
+        client_doc = _resolve_client_by_did(did)
+    if not client_doc and client_code:
+        candidates = _client_candidates(client_code=client_code)
+        if candidates:
+            client_doc = candidates[0]
+
+    if not client_doc:
+        for c in _client_candidates():
+            try:
+                res = _forward_to_client(
+                    c,
+                    f"{_CLIENT_APP_PREFIX}.api.get_assistant_config_full",
+                    {"assistant": assistant},
+                )
+                if res and isinstance(res, dict) and res.get("name"):
+                    return success_response({"config": res, "client_code": c.client_code or c.name})
+            except Exception:
+                continue
+        return error_response("NOT_FOUND", f"Assistant {assistant} not found on any client site.")
+
+    res = _forward_to_client(
+        client_doc,
+        f"{_CLIENT_APP_PREFIX}.api.get_assistant_config_full",
+        {"assistant": assistant},
+    )
+    return success_response({"config": res, "client_code": client_doc.client_code or client_doc.name})
