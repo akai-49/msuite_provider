@@ -8,3 +8,4 @@ msuite.patches.v1_0.linkedin_unify_platform
 msuite.patches.v1_0.rename_ai_calling_feature_keys
 msuite.patches.v1_0.reparent_ai_calling_orphan_features
 msuite.patches.v1_0.add_min_recipient_threshold_to_aws_settings
+msuite.patches.v1_0.add_ai_analytics_bot_to_social_post

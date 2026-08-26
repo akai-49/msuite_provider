@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "client",
+  "client_code",
+  "user_email",
+  "session_id",
+  "status",
+  "section_break_qa",
+  "user_question",
+  "bot_response",
+  "section_break_execution",
+  "tools_invoked",
+  "model_used",
+  "prompt_tokens",
+  "completion_tokens",
+  "latency_ms",
+  "user_rating",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "fieldname": "client",
+   "fieldtype": "Link",
+   "label": "MSuite Client",
+   "options": "MSuite Client"
+  },
+  {
+   "fieldname": "client_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Client Code"
+  },
+  {
+   "fieldname": "user_email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "User Email"
+  },
+  {
+   "fieldname": "session_id",
+   "fieldtype": "Data",
+   "label": "Session ID"
+  },
+  {
+   "default": "Success",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Success\nTool Error\nAuth Rejected\nQuota Exceeded"
+  },
+  {
+   "fieldname": "section_break_qa",
+   "fieldtype": "Section Break",
+   "label": "Question & Response"
+  },
+  {
+   "fieldname": "user_question",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "User Question"
+  },
+  {
+   "fieldname": "bot_response",
+   "fieldtype": "Long Text",
+   "label": "Bot Response"
+  },
+  {
+   "fieldname": "section_break_execution",
+   "fieldtype": "Section Break",
+   "label": "Execution Metrics"
+  },
+  {
+   "fieldname": "tools_invoked",
+   "fieldtype": "Code",
+   "label": "Tools Invoked",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "model_used",
+   "fieldtype": "Data",
+   "label": "Model Used"
+  },
+  {
+   "fieldname": "prompt_tokens",
+   "fieldtype": "Int",
+   "label": "Prompt Tokens"
+  },
+  {
+   "fieldname": "completion_tokens",
+   "fieldtype": "Int",
+   "label": "Completion Tokens"
+  },
+  {
+   "fieldname": "latency_ms",
+   "fieldtype": "Int",
+   "label": "Latency (ms)"
+  },
+  {
+   "default": "None",
+   "fieldname": "user_rating",
+   "fieldtype": "Select",
+   "label": "User Rating",
+   "options": "None\nThumbs Up\nThumbs Down"
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "MSuite Client",
+ "name": "MSuite AI Analytics Query Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
