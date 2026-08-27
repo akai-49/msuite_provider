@@ -29,7 +29,7 @@ logger = frappe.logger(MSUITE_LOGGER_NAME)
 
 def _get_microservice_url() -> str:
     """Read microservice base URL from site_config or environment."""
-    url = frappe.conf.get("ai_analytics_bot_url") or "http://127.0.0.1:8100"
+    url = frappe.conf.get("ai_analytics_bot_url") or "http://127.0.0.1:8004"
     return url.rstrip("/")
 
 
@@ -59,6 +59,7 @@ def chat(
     message: str,
     session_id: str | None = None,
     user_email: str | None = None,
+    conversation_history: list | str | None = None,
 ) -> dict:
     """
     Main user chat entrypoint.
@@ -83,6 +84,12 @@ def chat(
             "The AI Analytics Bot is not included in your current plan. Please upgrade to Pro or above.",
         )
 
+    if isinstance(conversation_history, str):
+        try:
+            conversation_history = json.loads(conversation_history)
+        except Exception:
+            conversation_history = []
+
     microservice_url = _get_microservice_url()
     client_code = client_doc.client_code or client_doc.name
     endpoint = f"{microservice_url}/analytics/chat"
@@ -92,6 +99,7 @@ def chat(
         "message": (message or "").strip(),
         "session_id": session_id or "",
         "user_email": user_email or "",
+        "conversation_history": conversation_history or [],
     }
 
     status = "Success"
@@ -118,6 +126,7 @@ def chat(
             bot_response_text = data.get("reply", "")
             tools_invoked = data.get("tools_used", [])
             model_used = data.get("model_used", "")
+            options_list = data.get("options", [])
             usage = data.get("usage", {})
             prompt_tokens = usage.get("prompt_tokens", 0)
             completion_tokens = usage.get("completion_tokens", 0)
@@ -126,6 +135,7 @@ def chat(
         status = "Tool Error"
         error_msg = str(exc)
         bot_response_text = "I could not reach the analytics engine. Please ensure the service is running."
+        options_list = []
 
     latency_ms = int((time.time() - start_time) * 1000)
 
@@ -160,6 +170,7 @@ def chat(
         "model_used": model_used,
         "latency_ms": latency_ms,
         "log_id": log_doc_name or "",
+        "options": options_list,
     })
 
 
@@ -223,3 +234,76 @@ def submit_feedback(client_identifier: str, log_id: str, rating: str) -> dict:
     frappe.db.commit()
 
     return success_response({"message": "Feedback recorded."})
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET", "POST"])
+def get_chat_history(
+    client_identifier: str,
+    session_id: str | None = None,
+    user_email: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """
+    Retrieve stored chat conversation history from MariaDB (MSuite AI Analytics Query Log).
+    """
+    try:
+        client_doc = require_msuite_client_auth(client_identifier)
+    except frappe.AuthenticationError as exc:
+        return error_response("AUTH_FAILED", str(exc))
+
+    filters = {"client": client_doc.name}
+    if session_id:
+        filters["session_id"] = session_id
+    elif user_email:
+        filters["user_email"] = user_email
+
+    logs = frappe.get_all(
+        "MSuite AI Analytics Query Log",
+        filters=filters,
+        fields=[
+            "name",
+            "session_id",
+            "user_email",
+            "user_question",
+            "bot_response",
+            "tools_invoked",
+            "model_used",
+            "user_rating",
+            "creation",
+        ],
+        order_by="creation asc",
+        limit=int(limit or 50),
+    )
+
+    formatted_messages = []
+    for log in logs:
+        # User turn
+        if log.user_question:
+            formatted_messages.append({
+                "role": "user",
+                "text": log.user_question,
+                "timestamp": str(log.creation),
+            })
+        # Assistant turn
+        if log.bot_response:
+            tools = []
+            if log.tools_invoked:
+                try:
+                    tools = json.loads(log.tools_invoked)
+                except Exception:
+                    tools = []
+            formatted_messages.append({
+                "role": "assistant",
+                "text": log.bot_response,
+                "tools_used": tools,
+                "model_used": log.model_used or "",
+                "log_id": log.name,
+                "user_rating": log.user_rating or "None",
+                "timestamp": str(log.creation),
+            })
+
+    return success_response({
+        "messages": formatted_messages,
+        "session_id": session_id or "",
+        "total_turns": len(logs),
+    })
