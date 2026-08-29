@@ -73,13 +73,11 @@
   {
    "fieldname": "api_key",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "API Key"
   },
   {
    "fieldname": "api_secret",
    "fieldtype": "Password",
-   "hidden": 1,
    "label": "API Secret"
   },
   {
@@ -95,16 +93,14 @@
   {
    "fieldname": "last_sync",
    "fieldtype": "Datetime",
-   "label": "Last Sync",
-   "read_only": 1
+   "label": "Last Sync"
   },
   {
    "fieldname": "last_sync_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Last Sync Status",
-   "options": "\nSuccess\nFailed",
-   "read_only": 1
+   "options": "\nSuccess\nFailed"
   },
   {
    "default": "0",
@@ -114,7 +110,7 @@
   }
  ],
  "links": [],
- "modified": "2026-08-29 10:41:00.971578",
+ "modified": "2026-08-29 10:57:52.475777",
  "modified_by": "Administrator",
  "module": "MSuite Client",
  "name": "MSuite Client",
