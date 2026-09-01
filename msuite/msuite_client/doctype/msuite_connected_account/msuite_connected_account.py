@@ -36,3 +36,14 @@ class MSuiteConnectedAccount(Document):
                 f"connected for client {self.client}",
                 frappe.ValidationError,
             )
+
+    def on_update(self):
+        if self.platform == "WhatsApp" and self.account_id:
+            from msuite.services.aws_routing_sync import sync_waba_route
+            sync_waba_route(self.account_id, self.client, status=self.status)
+
+    def on_trash(self):
+        if self.platform == "WhatsApp" and self.account_id:
+            from msuite.services.aws_routing_sync import delete_waba_route
+            delete_waba_route(self.account_id)
+

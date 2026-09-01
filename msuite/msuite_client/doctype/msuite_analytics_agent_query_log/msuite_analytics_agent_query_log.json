@@ -120,7 +120,7 @@
  "modified": "2026-08-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "MSuite Client",
- "name": "MSuite AI Analytics Query Log",
+ "name": "MSuite Analytics Agent Query Log",
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [

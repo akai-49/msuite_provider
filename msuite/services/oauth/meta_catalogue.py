@@ -26,6 +26,7 @@ from .meta_base import (
     build_facebook_login_url,
     discover_businesses,
     exchange_code_for_long_lived_token,
+    inspect_debug_token,
     upsert_businesses_as_auth_accounts,
 )
 
@@ -53,11 +54,19 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     expires_in = token_data.get("expires_in", LONG_LIVED_TOKEN_TTL)
     app_name   = token_data.get("app_name", "")
 
-    businesses   = discover_businesses(user_token)
+    debug_info = inspect_debug_token(user_token)
+    catalog_target_ids = debug_info.get("catalog_target_ids") or set()
+    business_target_ids = debug_info.get("business_target_ids") or set()
+
+    businesses = discover_businesses(user_token)
+    if business_target_ids:
+        businesses = [b for b in businesses if str(b.get("id")) in business_target_ids]
+
     biz_auth_map = upsert_businesses_as_auth_accounts(client_name, businesses)
 
     return _discover_catalogs(
-        client_name, user_token, app_name, expires_in, businesses, biz_auth_map
+        client_name, user_token, app_name, expires_in, businesses, biz_auth_map,
+        catalog_target_ids=catalog_target_ids
     )
 
 
@@ -68,6 +77,7 @@ def _discover_catalogs(
     expires_in: int,
     businesses: list[dict],
     biz_auth_map: dict[str, str],
+    catalog_target_ids: set[str] | None = None,
 ) -> list[dict]:
     connected: list[dict] = []
     sources = _catalog_sources(businesses)
@@ -93,6 +103,10 @@ def _discover_catalogs(
             catalog_id   = cat.get("id", "")
             catalog_name = cat.get("name", "")
             if not catalog_id:
+                continue
+
+            if catalog_target_ids and str(catalog_id) not in catalog_target_ids:
+                logger.info(f"Skipping catalog {catalog_name} ({catalog_id}): not in selected catalog target IDs.")
                 continue
 
             ca_name = upsert_connected_account(

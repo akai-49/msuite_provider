@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class MSuiteAIAnalyticsQueryLog(Document):
+class MSuiteAnalyticsAgentQueryLog(Document):
 	pass

@@ -79,3 +79,24 @@ def refresh_expiring_tokens():
             frappe.get_traceback(),
             "MSuite: Daily refresh_expiring_tokens failed",
         )
+
+
+def notify_expiring_subscriptions():
+    """Scan and notify customers and provider admins about expiring subscriptions."""
+    try:
+        from msuite.services.subscription_notification_service import (
+            check_and_notify_expiring_subscriptions,
+        )
+
+        summary = check_and_notify_expiring_subscriptions()
+        logger.info(
+            f"Subscription expiry notify: {summary['checked']} checked, "
+            f"{summary['client_notified']} clients notified, {summary['admin_notified']} admins notified"
+        )
+
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            "MSuite: Daily notify_expiring_subscriptions failed",
+        )
+

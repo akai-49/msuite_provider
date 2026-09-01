@@ -77,15 +77,15 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
 
     # Inspect token to check if user selected specific ad accounts / assets in Meta's OAuth dialog
     debug_info = inspect_debug_token(user_token)
+    ad_target_ids = debug_info.get("ad_target_ids") or set()
+    business_target_ids = debug_info.get("business_target_ids") or set()
     granular_target_ids = debug_info.get("target_ids") or set()
 
     businesses = discover_businesses(user_token)
 
     # If user selected specific businesses in Meta's consent popup, filter business list
-    if granular_target_ids:
-        matching_biz = [b for b in businesses if str(b.get("id")) in granular_target_ids]
-        if matching_biz:
-            businesses = matching_biz
+    if business_target_ids:
+        businesses = [b for b in businesses if str(b.get("id")) in business_target_ids]
 
     biz_auth_map = upsert_businesses_as_auth_accounts(client_name, businesses)
 
@@ -97,6 +97,8 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
         businesses,
         biz_auth_map,
         target_business_id=target_business_id,
+        ad_target_ids=ad_target_ids,
+        business_target_ids=business_target_ids,
         granular_target_ids=granular_target_ids,
     )
 
@@ -114,6 +116,8 @@ def _discover_ad_accounts(
     businesses: list[dict],
     biz_auth_map: dict[str, str],
     target_business_id: str | None = None,
+    ad_target_ids: set[str] | None = None,
+    business_target_ids: set[str] | None = None,
     granular_target_ids: set[str] | None = None,
 ) -> list[dict]:
     """Upsert active Ad Accounts the user can access + push to client site."""
@@ -166,16 +170,20 @@ def _discover_ad_accounts(
             biz_id = src_biz_id or str(ad_biz.get("id") or "")
             biz_name = src_biz_name or ad_biz.get("name") or ""
 
-            # If user selected specific ad accounts/businesses in Meta's consent popup, restrict strictly to those IDs
-            if granular_target_ids:
+            # If user selected specific ad accounts in Meta's consent popup, restrict strictly to those IDs
+            if ad_target_ids:
                 matches_account = (
-                    account_id in granular_target_ids or
-                    f"act_{account_id}" in granular_target_ids or
-                    (account_id.startswith("act_") and account_id[4:] in granular_target_ids)
+                    account_id in ad_target_ids or
+                    f"act_{account_id}" in ad_target_ids or
+                    (account_id.startswith("act_") and account_id[4:] in ad_target_ids)
                 )
-                matches_business = bool(biz_id and biz_id in granular_target_ids)
-                if not (matches_account or matches_business):
+                if not matches_account:
                     logger.info(f"Skipping ad account {account_id} ({account_name}): not selected by user in Meta consent dialog.")
+                    continue
+            elif business_target_ids:
+                matches_business = bool(biz_id and biz_id in business_target_ids)
+                if not matches_business:
+                    logger.info(f"Skipping ad account {account_id} ({account_name}): business {biz_id} not in selected businesses.")
                     continue
 
             # If target business specified, filter out ad accounts from other businesses

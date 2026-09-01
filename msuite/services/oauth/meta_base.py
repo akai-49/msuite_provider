@@ -227,6 +227,11 @@ def inspect_debug_token(user_token: str) -> dict:
     Returns dict with:
       "data": raw response dict from debug_token
       "target_ids": set of string asset IDs explicitly selected by the user
+      "page_target_ids": set of Page IDs explicitly selected by the user
+      "instagram_target_ids": set of Instagram IDs explicitly selected by the user
+      "business_target_ids": set of Business IDs explicitly selected by the user
+      "ad_target_ids": set of Ad Account IDs explicitly selected by the user
+      "catalog_target_ids": set of Catalog IDs explicitly selected by the user
     """
     try:
         app = get_msuite_app(META_APP_PLATFORM)
@@ -241,17 +246,58 @@ def inspect_debug_token(user_token: str) -> dict:
         )
         data = resp.json().get("data", {})
         target_ids: set[str] = set()
+        page_target_ids: set[str] = set()
+        instagram_target_ids: set[str] = set()
+        business_target_ids: set[str] = set()
+        ad_target_ids: set[str] = set()
+        catalog_target_ids: set[str] = set()
+
         for item in data.get("granular_scopes", []):
-            for tid in item.get("target_ids", []):
-                if tid:
-                    tid_str = str(tid)
-                    target_ids.add(tid_str)
-                    if tid_str.isdigit():
-                        target_ids.add(f"act_{tid_str}")
-                    elif tid_str.startswith("act_"):
-                        target_ids.add(tid_str[4:])
-        return {"data": data, "target_ids": target_ids}
+            scope = item.get("scope", "")
+            tids = item.get("target_ids", [])
+            for tid in tids:
+                if not tid:
+                    continue
+                tid_str = str(tid)
+                target_ids.add(tid_str)
+                if tid_str.isdigit():
+                    target_ids.add(f"act_{tid_str}")
+                elif tid_str.startswith("act_"):
+                    target_ids.add(tid_str[4:])
+
+                if scope.startswith("pages_") or scope in ("leads_retrieval",):
+                    page_target_ids.add(tid_str)
+                elif scope.startswith("instagram_"):
+                    instagram_target_ids.add(tid_str)
+                elif scope.startswith("business_") or scope == "business_management":
+                    business_target_ids.add(tid_str)
+                elif scope.startswith("ads_"):
+                    ad_target_ids.add(tid_str)
+                    if tid_str.startswith("act_"):
+                        ad_target_ids.add(tid_str[4:])
+                    elif tid_str.isdigit():
+                        ad_target_ids.add(f"act_{tid_str}")
+                elif scope.startswith("catalog_"):
+                    catalog_target_ids.add(tid_str)
+
+        return {
+            "data": data,
+            "target_ids": target_ids,
+            "page_target_ids": page_target_ids,
+            "instagram_target_ids": instagram_target_ids,
+            "business_target_ids": business_target_ids,
+            "ad_target_ids": ad_target_ids,
+            "catalog_target_ids": catalog_target_ids,
+        }
     except Exception as e:
         logger.error(f"debug_token inspection failed: {e}")
-        return {"data": {}, "target_ids": set()}
+        return {
+            "data": {},
+            "target_ids": set(),
+            "page_target_ids": set(),
+            "instagram_target_ids": set(),
+            "business_target_ids": set(),
+            "ad_target_ids": set(),
+            "catalog_target_ids": set(),
+        }
 

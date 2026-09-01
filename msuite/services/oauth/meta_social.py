@@ -114,16 +114,29 @@ def discover_accounts(client_name: str, token_data: dict) -> list[dict]:
     expires_in = token_data.get("expires_in", LONG_LIVED_TOKEN_TTL)
     app_name   = token_data.get("app_name", "")
 
-    # Inspect debug token to get granular_target_ids selected by the user in Meta consent popup
+    # Inspect debug token to get granular target IDs selected by the user in Meta consent popup
     debug_info = inspect_debug_token(user_token)
-    granular_target_ids = debug_info.get("target_ids") or set()
+    page_target_ids = debug_info.get("page_target_ids") or set()
+    instagram_target_ids = debug_info.get("instagram_target_ids") or set()
+    business_target_ids = debug_info.get("business_target_ids") or set()
 
-    businesses   = discover_businesses(user_token)
+    businesses = discover_businesses(user_token)
+    # If user selected specific businesses in Meta's consent popup, filter business list
+    if business_target_ids:
+        businesses = [b for b in businesses if str(b.get("id")) in business_target_ids]
+
     biz_auth_map = upsert_businesses_as_auth_accounts(client_name, businesses)
     page_biz_map = _build_page_business_map(businesses, user_token, biz_auth_map)
 
     return _discover_pages_and_instagram(
-        client_name, user_token, app_name, expires_in, page_biz_map, businesses, granular_target_ids=granular_target_ids
+        client_name,
+        user_token,
+        app_name,
+        expires_in,
+        page_biz_map,
+        businesses,
+        page_target_ids=page_target_ids,
+        instagram_target_ids=instagram_target_ids,
     )
 
 
@@ -214,7 +227,8 @@ def _discover_pages_and_instagram(
     expires_in: int,
     page_biz_map: dict,
     businesses: list[dict],
-    granular_target_ids: set[str] | None = None,
+    page_target_ids: set[str] | None = None,
+    instagram_target_ids: set[str] | None = None,
 ) -> list[dict]:
     """Discover Facebook Pages via `/me/accounts`, `/{biz}/owned_pages`, `/{biz}/client_pages` and their linked IG."""
     connected: list[dict] = []
@@ -234,20 +248,24 @@ def _discover_pages_and_instagram(
         )
         if resp.status_code == 200:
             for page in resp.json().get("data", []):
-                if page.get("id"):
-                    pages_dict[page["id"]] = page
+                p_id = str(page.get("id", ""))
+                if p_id:
+                    # If user selected specific pages in OAuth dialog, only include granted page IDs
+                    if page_target_ids and p_id not in page_target_ids:
+                        continue
+                    pages_dict[p_id] = page
     except Exception as e:
         logger.error(f"Failed to discover personal Facebook Pages (/me/accounts): {e}")
 
-    # 2. Also query any explicitly granted Page IDs from granular_target_ids (e.g. standalone/NPE pages)
-    if granular_target_ids:
-        for tid in granular_target_ids:
-            if not tid or tid.startswith("act_") or tid in pages_dict or tid in biz_auth_map:
+    # 2. Query any explicitly granted Page IDs from page_target_ids (e.g. standalone/NPE pages or pages missing from /me/accounts)
+    if page_target_ids:
+        for tid in page_target_ids:
+            if not tid or tid.startswith("act_") or tid in pages_dict:
                 continue
             p_data = _fetch_page_detail(tid, user_token)
             if p_data and p_data.get("id") and (p_data.get("name") or p_data.get("access_token")):
                 pages_dict[p_data["id"]] = p_data
-                logger.info(f"Discovered standalone page {p_data.get('name', tid)} ({p_data['id']}) via granular target ID")
+                logger.info(f"Discovered granted page {p_data.get('name', tid)} ({p_data['id']}) via page target ID")
 
     # 3. Collect pages from Business Manager / Business Suite (owned_pages & client_pages)
     for endpoint in ("owned_pages", "client_pages"):
@@ -266,14 +284,24 @@ def _discover_pages_and_instagram(
                     timeout=30,
                 )
                 for page in resp.json().get("data", []):
-                    page_id = page.get("id")
-                    if page_id and page_id not in pages_dict:
+                    page_id = str(page.get("id", ""))
+                    if not page_id:
+                        continue
+                    # If user selected specific pages in OAuth dialog, only include granted page IDs
+                    if page_target_ids and page_id not in page_target_ids:
+                        continue
+                    if page_id not in pages_dict:
                         pages_dict[page_id] = page
             except Exception as e:
                 logger.warning(f"Failed to fetch {endpoint} for business {biz_id}: {e}")
 
-    # 4. Process all unique discovered Pages
+    # 4. Process discovered Pages
     for page_id, page in pages_dict.items():
+        # Strict guard: if user selected specific pages in Meta dialog, skip any page not selected
+        if page_target_ids and page_id not in page_target_ids:
+            logger.info(f"Skipping page {page.get('name', page_id)} ({page_id}): not in user-selected page target IDs.")
+            continue
+
         page_name  = page.get("name", "")
         page_token = page.get("access_token", "")
 
@@ -284,7 +312,6 @@ def _discover_pages_and_instagram(
         biz_info     = page_biz_map.get(page_id) or page_biz_map.get(page_name) or {}
         biz_id       = direct_biz_id or biz_info.get("business_id", "")
         biz_name     = direct_biz_name or biz_info.get("business_name", "")
-
 
         token_type = "Page Token"
         if not page_token:
@@ -299,10 +326,10 @@ def _discover_pages_and_instagram(
                     biz_id = direct_biz_id or biz_id
                     biz_name = direct_biz_name or biz_name
 
+        # If page_token is still missing, this page cannot be managed or subscribed as a Facebook Page
         if not page_token:
-            page_token = user_token
-            token_type = "User Token"
-            logger.info(f"Page {page_name} ({page_id}): using user_token as fallback")
+            logger.warning(f"Skipping Page {page_name} ({page_id}): No valid page access token found (not authorized for management).")
+            continue
 
         avatar_url = f"https://graph.facebook.com/{page_id}/picture?type=large"
         auth_account = biz_info.get("auth_account") or (biz_auth_map.get(biz_id) if biz_id else None)
@@ -338,6 +365,7 @@ def _discover_pages_and_instagram(
         ig_result = _discover_instagram_for_page(
             client_name, page_id, page_name, page_token, user_token,
             app_name, expires_in, biz_id, biz_name=biz_name, auth_account=auth_account,
+            instagram_target_ids=instagram_target_ids,
         )
         if ig_result:
             connected.append(ig_result)
@@ -356,6 +384,7 @@ def _discover_instagram_for_page(
     biz_id: str,
     biz_name: str = "",
     auth_account: str | None = None,
+    instagram_target_ids: set[str] | None = None,
 ) -> dict | None:
     """Check a page for a linked Instagram Business Account; upsert + push."""
     try:
@@ -371,7 +400,13 @@ def _discover_instagram_for_page(
         if not ig_account:
             return None
 
-        ig_id       = ig_account["id"]
+        ig_id = str(ig_account["id"])
+
+        # If user explicitly selected Instagram accounts in OAuth dialog, filter out unselected ones
+        if instagram_target_ids and ig_id not in instagram_target_ids and str(page_id) not in instagram_target_ids:
+            logger.info(f"Skipping Instagram account {ig_account.get('username', ig_id)} ({ig_id}): not in user-selected Instagram target IDs.")
+            return None
+
         ig_username = ig_account.get("username", "")
         ig_name     = ig_account.get("name", ig_username)
         ig_avatar_url = ig_account.get("profile_picture_url") or ""

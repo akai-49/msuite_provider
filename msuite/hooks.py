@@ -61,6 +61,8 @@ scheduler_events = {
         # none yet. No-op unless the notification URL is public HTTPS;
         # delta polling covers ingestion either way.
         "msuite.services.mail.graph_subscriptions.renew_graph_subscriptions",
+        # Proactively notify customers and admins when subscriptions approach expiry/renewal
+        "msuite.scheduled_tasks.daily.notify_expiring_subscriptions",
     ]
 }
 

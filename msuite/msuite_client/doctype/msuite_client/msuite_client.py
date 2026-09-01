@@ -36,6 +36,15 @@ class MSuiteClient(Document):
     def validate(self):
         self._validate_client_url()
 
+    def on_update(self):
+        from msuite.services.aws_routing_sync import sync_all_client_routes
+        sync_all_client_routes(self.name)
+
+    def on_trash(self):
+        if self.client_code:
+            from msuite.services.aws_routing_sync import delete_client_route
+            delete_client_route(self.client_code)
+
     def _validate_client_url(self):
         """Ensure URL is well-formed and strip trailing slash."""
         url = (self.client_url or "").strip().rstrip("/")
