@@ -11,6 +11,7 @@ Enables direct-to-client webhook dispatch on the AWS execution plane.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 import frappe
 from frappe import _
@@ -71,7 +72,7 @@ def sync_waba_route(waba_id: str, client_doc_or_name, status: str | None = None)
 			"api_key": client_doc.api_key or "",
 			"api_secret": api_secret,
 			"status": effective_status,
-			"updated_at": frappe.utils.now_datetime().isoformat(),
+			"updated_at": datetime.now(timezone.utc).isoformat(),
 		}
 		table.put_item(Item=item)
 		logger.info(f"Synchronized DynamoDB route for WABA {waba_id} -> {client_doc.client_code} ({effective_status})")
@@ -125,7 +126,7 @@ def sync_client_route(client_doc_or_name, status: str | None = None) -> bool:
 			"api_key": client_doc.api_key or "",
 			"api_secret": api_secret,
 			"status": effective_status,
-			"updated_at": frappe.utils.now_datetime().isoformat(),
+			"updated_at": datetime.now(timezone.utc).isoformat(),
 		}
 		table.put_item(Item=item)
 		logger.info(f"Synchronized DynamoDB route for Client {client_doc.client_code} ({effective_status})")
@@ -175,3 +176,57 @@ def sync_all_client_routes(client_name: str) -> None:
 				sync_waba_route(acc.account_id, client_doc, status=status)
 	except Exception as e:
 		logger.error(f"Failed to sync all routes for client {client_name}: {e}")
+
+
+def sync_all_tenants() -> dict:
+	"""Bulk-sync all active MSuite Clients and their connected WhatsApp WABAs to DynamoDB.
+
+	Used for initial system migration / backfill or after AWS table recreation.
+	"""
+	clients = frappe.get_all(
+		"MSuite Client",
+		fields=["name", "client_code", "status"],
+	)
+
+	synced_clients = 0
+	synced_wabas = 0
+	errors = []
+
+	for client in clients:
+		try:
+			client_doc = frappe.get_doc("MSuite Client", client.name)
+			if sync_client_route(client_doc):
+				synced_clients += 1
+
+			accounts = frappe.get_all(
+				"MSuite Connected Account",
+				filters={"client": client.name, "platform": "WhatsApp"},
+				fields=["name", "account_id", "status"],
+			)
+			for acc in accounts:
+				if acc.account_id:
+					status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
+					if sync_waba_route(acc.account_id, client_doc, status=status):
+						synced_wabas += 1
+		except Exception as e:
+			err_msg = f"Failed to sync client {client.name} ({client.client_code}): {e}"
+			logger.error(err_msg)
+			errors.append(err_msg)
+
+	logger.info(f"Bulk DynamoDB routing sync complete: {synced_clients} clients, {synced_wabas} WABAs synced, {len(errors)} errors")
+	return {
+		"status": "success" if not errors else "partial",
+		"synced_clients": synced_clients,
+		"synced_wabas": synced_wabas,
+		"errors": errors,
+	}
+
+
+@frappe.whitelist()
+def sync_all_routes_rpc() -> dict:
+	"""Whitelisted API method to trigger bulk tenant routing synchronization."""
+	from msuite.utils.validators import require_system_manager_or_msuite_manager
+
+	require_system_manager_or_msuite_manager()
+	return sync_all_tenants()
+
