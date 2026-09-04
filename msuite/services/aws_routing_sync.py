@@ -225,6 +225,168 @@ def delete_waba_route(waba_id: str) -> bool:
 		return False
 
 
+def sync_page_route(page_id: str, client_doc_or_name, status: str | None = None) -> bool:
+	"""Persist or update tenant routing for a Facebook Page in DynamoDB and Redis."""
+	if not page_id:
+		return False
+
+	table = get_routing_table()
+	if table is None:
+		return False
+
+	try:
+		if isinstance(client_doc_or_name, str):
+			client_doc = frappe.get_doc("MSuite Client", client_doc_or_name)
+		else:
+			client_doc = client_doc_or_name
+
+		api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret") or ""
+		effective_status = status or ("Active" if client_doc.status == "Active" else "Suspended")
+
+		item = {
+			"PK": f"ROUTING#PAGE#{page_id}",
+			"SK": "CONFIG",
+			"client_code": client_doc.client_code or "",
+			"client_url": (client_doc.client_url or "").rstrip("/"),
+			"api_key": client_doc.api_key or "",
+			"api_secret": api_secret,
+			"status": effective_status,
+			"updated_at": datetime.now(timezone.utc).isoformat(),
+		}
+		table.put_item(Item=item)
+		logger.info(f"Synchronized DynamoDB route for Facebook Page {page_id} -> {client_doc.client_code} ({effective_status})")
+
+		# Redis write-through
+		try:
+			r = get_routing_redis_client()
+			if r is not None:
+				redis_payload = {
+					"client_code": client_doc.client_code or "",
+					"client_url": (client_doc.client_url or "").rstrip("/"),
+					"api_key": client_doc.api_key or "",
+					"api_secret": api_secret,
+					"status": effective_status,
+					"updated_at": item["updated_at"],
+				}
+				r.set(f"routing:page:{page_id}", json.dumps(redis_payload), ex=DEFAULT_ROUTING_TTL_SECONDS)
+				logger.info(f"Synchronized Redis route for Facebook Page {page_id} -> {client_doc.client_code}")
+		except Exception as re:
+			logger.warning(f"Failed to write Facebook Page {page_id} to Routing Redis: {re}")
+
+		return True
+	except Exception as e:
+		logger.error(f"Failed to sync Facebook Page {page_id} to DynamoDB: {e}")
+		return False
+
+
+def delete_page_route(page_id: str) -> bool:
+	"""Remove a Facebook Page routing entry from DynamoDB and evict from Routing Redis."""
+	if not page_id:
+		return False
+
+	table = get_routing_table()
+	if table is None:
+		return False
+
+	try:
+		table.delete_item(Key={"PK": f"ROUTING#PAGE#{page_id}", "SK": "CONFIG"})
+		logger.info(f"Deleted DynamoDB route for Facebook Page {page_id}")
+
+		try:
+			r = get_routing_redis_client()
+			if r is not None:
+				r.delete(f"routing:page:{page_id}")
+				logger.info(f"Deleted Redis route for Facebook Page {page_id}")
+		except Exception as re:
+			logger.warning(f"Failed to delete Facebook Page {page_id} from Routing Redis: {re}")
+
+		return True
+	except Exception as e:
+		logger.error(f"Failed to delete Facebook Page {page_id} from DynamoDB: {e}")
+		return False
+
+
+def sync_instagram_route(ig_user_id: str, client_doc_or_name, status: str | None = None) -> bool:
+	"""Persist or update tenant routing for an Instagram Account in DynamoDB and Redis."""
+	if not ig_user_id:
+		return False
+
+	table = get_routing_table()
+	if table is None:
+		return False
+
+	try:
+		if isinstance(client_doc_or_name, str):
+			client_doc = frappe.get_doc("MSuite Client", client_doc_or_name)
+		else:
+			client_doc = client_doc_or_name
+
+		api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret") or ""
+		effective_status = status or ("Active" if client_doc.status == "Active" else "Suspended")
+
+		item = {
+			"PK": f"ROUTING#INSTAGRAM#{ig_user_id}",
+			"SK": "CONFIG",
+			"client_code": client_doc.client_code or "",
+			"client_url": (client_doc.client_url or "").rstrip("/"),
+			"api_key": client_doc.api_key or "",
+			"api_secret": api_secret,
+			"status": effective_status,
+			"updated_at": datetime.now(timezone.utc).isoformat(),
+		}
+		table.put_item(Item=item)
+		logger.info(f"Synchronized DynamoDB route for Instagram {ig_user_id} -> {client_doc.client_code} ({effective_status})")
+
+		# Redis write-through
+		try:
+			r = get_routing_redis_client()
+			if r is not None:
+				redis_payload = {
+					"client_code": client_doc.client_code or "",
+					"client_url": (client_doc.client_url or "").rstrip("/"),
+					"api_key": client_doc.api_key or "",
+					"api_secret": api_secret,
+					"status": effective_status,
+					"updated_at": item["updated_at"],
+				}
+				r.set(f"routing:instagram:{ig_user_id}", json.dumps(redis_payload), ex=DEFAULT_ROUTING_TTL_SECONDS)
+				logger.info(f"Synchronized Redis route for Instagram {ig_user_id} -> {client_doc.client_code}")
+		except Exception as re:
+			logger.warning(f"Failed to write Instagram {ig_user_id} to Routing Redis: {re}")
+
+		return True
+	except Exception as e:
+		logger.error(f"Failed to sync Instagram {ig_user_id} to DynamoDB: {e}")
+		return False
+
+
+def delete_instagram_route(ig_user_id: str) -> bool:
+	"""Remove an Instagram routing entry from DynamoDB and evict from Routing Redis."""
+	if not ig_user_id:
+		return False
+
+	table = get_routing_table()
+	if table is None:
+		return False
+
+	try:
+		table.delete_item(Key={"PK": f"ROUTING#INSTAGRAM#{ig_user_id}", "SK": "CONFIG"})
+		logger.info(f"Deleted DynamoDB route for Instagram {ig_user_id}")
+
+		try:
+			r = get_routing_redis_client()
+			if r is not None:
+				r.delete(f"routing:instagram:{ig_user_id}")
+				logger.info(f"Deleted Redis route for Instagram {ig_user_id}")
+		except Exception as re:
+			logger.warning(f"Failed to delete Instagram {ig_user_id} from Routing Redis: {re}")
+
+		return True
+	except Exception as e:
+		logger.error(f"Failed to delete Instagram {ig_user_id} from DynamoDB: {e}")
+		return False
+
+
 def sync_client_route(client_doc_or_name, status: str | None = None) -> bool:
 	"""Persist or update tenant routing for a Client (used by SMS & Email) in DynamoDB and Redis."""
 	table = get_routing_table()
@@ -307,7 +469,7 @@ def delete_client_route(client_code: str) -> bool:
 
 
 def sync_all_client_routes(client_name: str) -> None:
-	"""Sync all client routes (SMS, Email, and WhatsApp) for a client."""
+	"""Sync all client routes (SMS, Email, WhatsApp, Facebook, and Instagram) for a client."""
 	if not client_name:
 		return
 
@@ -326,12 +488,34 @@ def sync_all_client_routes(client_name: str) -> None:
 			if acc.account_id:
 				status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
 				sync_waba_route(acc.account_id, client_doc, status=status)
+
+		# 3. Sync Facebook Page Routes
+		fb_accounts = frappe.get_all(
+			"MSuite Connected Account",
+			filters={"client": client_name, "platform": "Facebook"},
+			fields=["name", "account_id", "status"],
+		)
+		for acc in fb_accounts:
+			if acc.account_id:
+				status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
+				sync_page_route(acc.account_id, client_doc, status=status)
+
+		# 4. Sync Instagram Routes
+		ig_accounts = frappe.get_all(
+			"MSuite Connected Account",
+			filters={"client": client_name, "platform": "Instagram"},
+			fields=["name", "account_id", "status"],
+		)
+		for acc in ig_accounts:
+			if acc.account_id:
+				status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
+				sync_instagram_route(acc.account_id, client_doc, status=status)
 	except Exception as e:
 		logger.error(f"Failed to sync all routes for client {client_name}: {e}")
 
 
 def sync_all_tenants() -> dict:
-	"""Bulk-sync all active MSuite Clients and their connected WhatsApp WABAs to DynamoDB.
+	"""Bulk-sync all active MSuite Clients and their connected WhatsApp, Facebook, and Instagram accounts to DynamoDB.
 
 	Used for initial system migration / backfill or after AWS table recreation.
 	"""
@@ -342,6 +526,8 @@ def sync_all_tenants() -> dict:
 
 	synced_clients = 0
 	synced_wabas = 0
+	synced_pages = 0
+	synced_instagrams = 0
 	errors = []
 
 	for client in clients:
@@ -360,16 +546,43 @@ def sync_all_tenants() -> dict:
 					status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
 					if sync_waba_route(acc.account_id, client_doc, status=status):
 						synced_wabas += 1
+
+			fb_accounts = frappe.get_all(
+				"MSuite Connected Account",
+				filters={"client": client.name, "platform": "Facebook"},
+				fields=["name", "account_id", "status"],
+			)
+			for acc in fb_accounts:
+				if acc.account_id:
+					status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
+					if sync_page_route(acc.account_id, client_doc, status=status):
+						synced_pages += 1
+
+			ig_accounts = frappe.get_all(
+				"MSuite Connected Account",
+				filters={"client": client.name, "platform": "Instagram"},
+				fields=["name", "account_id", "status"],
+			)
+			for acc in ig_accounts:
+				if acc.account_id:
+					status = "Active" if (client_doc.status == "Active" and acc.status == "Active") else "Suspended"
+					if sync_instagram_route(acc.account_id, client_doc, status=status):
+						synced_instagrams += 1
 		except Exception as e:
 			err_msg = f"Failed to sync client {client.name} ({client.client_code}): {e}"
 			logger.error(err_msg)
 			errors.append(err_msg)
 
-	logger.info(f"Bulk DynamoDB routing sync complete: {synced_clients} clients, {synced_wabas} WABAs synced, {len(errors)} errors")
+	logger.info(
+		f"Bulk DynamoDB routing sync complete: {synced_clients} clients, {synced_wabas} WABAs, "
+		f"{synced_pages} Pages, {synced_instagrams} Instagram accounts synced, {len(errors)} errors"
+	)
 	return {
 		"status": "success" if not errors else "partial",
 		"synced_clients": synced_clients,
 		"synced_wabas": synced_wabas,
+		"synced_pages": synced_pages,
+		"synced_instagrams": synced_instagrams,
 		"errors": errors,
 	}
 

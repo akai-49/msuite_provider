@@ -38,12 +38,30 @@ class MSuiteConnectedAccount(Document):
             )
 
     def on_update(self):
-        if self.platform == "WhatsApp" and self.account_id:
+        if not self.account_id:
+            return
+
+        if self.platform == "WhatsApp":
             from msuite.services.aws_routing_sync import sync_waba_route
             sync_waba_route(self.account_id, self.client, status=self.status)
+        elif self.platform == "Facebook":
+            from msuite.services.aws_routing_sync import sync_page_route
+            sync_page_route(self.account_id, self.client, status=self.status)
+        elif self.platform == "Instagram":
+            from msuite.services.aws_routing_sync import sync_instagram_route
+            sync_instagram_route(self.account_id, self.client, status=self.status)
 
     def on_trash(self):
-        if self.platform == "WhatsApp" and self.account_id:
+        if not self.account_id:
+            return
+
+        if self.platform == "WhatsApp":
             from msuite.services.aws_routing_sync import delete_waba_route
             delete_waba_route(self.account_id)
+        elif self.platform == "Facebook":
+            from msuite.services.aws_routing_sync import delete_page_route
+            delete_page_route(self.account_id)
+        elif self.platform == "Instagram":
+            from msuite.services.aws_routing_sync import delete_instagram_route
+            delete_instagram_route(self.account_id)
 
