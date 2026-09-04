@@ -24,6 +24,10 @@ from msuite.services import aws_routing_sync
 
 class TestAWSRoutingSync(unittest.TestCase):
 	def setUp(self):
+		aws_routing_sync._routing_redis_client = None
+		aws_routing_sync._routing_redis_cached_url = None
+		frappe.local.db = MagicMock()
+		frappe.local.conf = frappe._dict()
 		self.mock_table = MagicMock()
 		self.table_patch = patch.object(
 			aws_routing_sync, "get_routing_table", return_value=self.mock_table
@@ -32,6 +36,8 @@ class TestAWSRoutingSync(unittest.TestCase):
 
 	def tearDown(self):
 		self.table_patch.stop()
+		aws_routing_sync._routing_redis_client = None
+		aws_routing_sync._routing_redis_cached_url = None
 
 	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_xyz")
 	def test_sync_waba_route_active(self, mock_secret):
@@ -217,6 +223,140 @@ class TestAWSRoutingSync(unittest.TestCase):
 		doc.on_trash()
 		mock_delete_client.assert_called_once_with("CLI-CODE-123")
 
+	@patch("msuite.services.aws_routing_sync.frappe.get_all")
+	def test_get_redis_endpoint_url_from_child_table(self, mock_get_all):
+		frappe.local.db.get_single_value.return_value = 1
+		endpoint_row = MagicMock()
+		endpoint_row.redis_url = "rediss://routing-redis.aws.com:6379/0"
+		mock_get_all.return_value = [endpoint_row]
+
+		url = aws_routing_sync.get_redis_endpoint_url("Tenant Routing")
+		self.assertEqual(url, "rediss://routing-redis.aws.com:6379/0")
+		mock_get_all.assert_called_once_with(
+			"MSuite Redis Endpoint",
+			filters={"parent": "MSuite AWS Settings", "purpose": "Tenant Routing", "enabled": 1},
+			fields=["redis_url"],
+			limit=1,
+		)
+
+	def test_get_redis_endpoint_url_from_conf(self):
+		frappe.local.db.get_single_value.return_value = 0
+		frappe.local.conf = frappe._dict({"tenant_routing_redis_url": "rediss://conf-redis:6379/0"})
+		url = aws_routing_sync.get_redis_endpoint_url("Tenant Routing")
+		self.assertEqual(url, "rediss://conf-redis:6379/0")
+
+	@patch("msuite.services.aws_routing_sync.get_routing_redis_client")
+	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_xyz")
+	def test_sync_waba_route_writes_to_redis(self, mock_secret, mock_get_redis):
+		mock_redis = MagicMock()
+		mock_get_redis.return_value = mock_redis
+
+		client_doc = MagicMock()
+		client_doc.name = "CLI-001-DOC"
+		client_doc.client_code = "CLI-001"
+		client_doc.client_url = "https://tenant1.msuite.app/"
+		client_doc.api_key = "key_abc"
+		client_doc.status = "Active"
+
+		result = aws_routing_sync.sync_waba_route("104857291", client_doc)
+		self.assertTrue(result)
+
+		mock_redis.set.assert_called_once()
+		call_args = mock_redis.set.call_args
+		key = call_args[0][0]
+		val_str = call_args[0][1]
+		ex = call_args[1].get("ex")
+
+		self.assertEqual(key, "routing:waba:104857291")
+		self.assertEqual(ex, aws_routing_sync.DEFAULT_ROUTING_TTL_SECONDS)
+		self.assertIn('"client_code": "CLI-001"', val_str)
+		self.assertIn('"client_url": "https://tenant1.msuite.app"', val_str)
+
+	@patch("msuite.services.aws_routing_sync.get_routing_redis_client")
+	def test_delete_waba_route_evicts_from_redis(self, mock_get_redis):
+		mock_redis = MagicMock()
+		mock_get_redis.return_value = mock_redis
+
+		result = aws_routing_sync.delete_waba_route("104857291")
+		self.assertTrue(result)
+
+		mock_redis.delete.assert_called_once_with("routing:waba:104857291")
+
+	@patch("msuite.services.aws_routing_sync.get_routing_redis_client")
+	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_xyz")
+	def test_sync_client_route_writes_to_redis(self, mock_secret, mock_get_redis):
+		mock_redis = MagicMock()
+		mock_get_redis.return_value = mock_redis
+
+		client_doc = MagicMock()
+		client_doc.name = "CLI-001-DOC"
+		client_doc.client_code = "CLI-001"
+		client_doc.client_url = "https://tenant1.msuite.app/"
+		client_doc.api_key = "key_abc"
+		client_doc.status = "Active"
+
+		result = aws_routing_sync.sync_client_route(client_doc)
+		self.assertTrue(result)
+
+		mock_redis.set.assert_called_once()
+		key = mock_redis.set.call_args[0][0]
+		self.assertEqual(key, "routing:client:CLI-001")
+
+	@patch("msuite.services.aws_routing_sync.get_routing_redis_client")
+	def test_delete_client_route_evicts_from_redis(self, mock_get_redis):
+		mock_redis = MagicMock()
+		mock_get_redis.return_value = mock_redis
+
+		result = aws_routing_sync.delete_client_route("CLI-001")
+		self.assertTrue(result)
+
+		mock_redis.delete.assert_called_once_with("routing:client:CLI-001")
+
+	@patch("msuite.services.aws_routing_sync.get_routing_redis_client")
+	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_xyz")
+	def test_redis_write_fail_soft(self, mock_secret, mock_get_redis):
+		mock_redis = MagicMock()
+		mock_redis.set.side_effect = Exception("Redis connection timed out")
+		mock_get_redis.return_value = mock_redis
+
+		client_doc = MagicMock()
+		client_doc.name = "CLI-001-DOC"
+		client_doc.client_code = "CLI-001"
+		client_doc.client_url = "https://tenant1.msuite.app/"
+		client_doc.api_key = "key_abc"
+		client_doc.status = "Active"
+
+		result = aws_routing_sync.sync_waba_route("104857291", client_doc)
+		self.assertTrue(result)
+		self.mock_table.put_item.assert_called_once()
+
+	@patch("redis.Redis.from_url")
+	@patch("msuite.services.aws_routing_sync.get_redis_endpoint_url")
+	def test_get_routing_redis_client_reconnects_on_url_change(self, mock_get_url, mock_from_url):
+		mock_get_url.return_value = "rediss://redis-cluster-a:6379/0"
+		mock_client_a = MagicMock()
+		mock_client_b = MagicMock()
+		mock_from_url.side_effect = [mock_client_a, mock_client_b]
+
+		# 1. First call initializes client A
+		client1 = aws_routing_sync.get_routing_redis_client()
+		self.assertEqual(client1, mock_client_a)
+		self.assertEqual(mock_from_url.call_count, 1)
+
+		# 2. Second call with same URL reuses client A without calling from_url again
+		client2 = aws_routing_sync.get_routing_redis_client()
+		self.assertEqual(client2, mock_client_a)
+		self.assertEqual(mock_from_url.call_count, 1)
+
+		# 3. URL changes -> closes client A and connects to client B
+		mock_get_url.return_value = "rediss://redis-cluster-b:6379/0"
+		client3 = aws_routing_sync.get_routing_redis_client()
+		self.assertEqual(client3, mock_client_b)
+		self.assertEqual(mock_from_url.call_count, 2)
+		mock_client_a.close.assert_called_once()
+
 
 if __name__ == "__main__":
 	unittest.main()
+
+

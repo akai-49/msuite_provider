@@ -22,7 +22,9 @@
   "cb_phase4",
   "relay_token",
   "sec_secrets",
-  "secret_prefix"
+  "secret_prefix",
+  "sec_redis",
+  "redis_endpoints"
  ],
  "fields": [
   {
@@ -135,6 +137,17 @@
    "fieldname": "secret_prefix",
    "fieldtype": "Data",
    "label": "Secret Prefix"
+  },
+  {
+   "fieldname": "sec_redis",
+   "fieldtype": "Section Break",
+   "label": "Redis Infrastructure"
+  },
+  {
+   "fieldname": "redis_endpoints",
+   "fieldtype": "Table",
+   "label": "Redis Endpoints",
+   "options": "MSuite Redis Endpoint"
   }
  ],
  "index_web_pages_for_search": 0,
