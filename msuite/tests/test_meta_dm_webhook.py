@@ -521,3 +521,43 @@ class TestSubscriptionRepair(IntegrationTestCase):
             meta_social.retry_failed_page_subscriptions()
         called_urls = [c.args[0] for c in mock_post.call_args_list if c.args]
         self.assertFalse([u for u in called_urls if _FB_PAGE_ID in u])
+
+
+class TestMetaWebhookFallback(IntegrationTestCase):
+    def test_meta_webhook_unauthorized_without_relay_token(self):
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {}
+        with patch.object(provider_webhook.frappe, "request", req), \
+             patch("msuite.api.v1.bulk_relay._relay_authorised", return_value=False):
+            with self.assertRaises(frappe.AuthenticationError):
+                provider_webhook.meta_webhook()
+
+    def test_meta_webhook_accepts_valid_relay_token(self):
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {"X-MSuite-Relay-Token": "test-relay-token"}
+        req.get_json.return_value = {
+            "object": "page",
+            "entry": [{"id": "UNKNOWN_PAGE", "time": 1751000000000, "messaging": [{"message": {"text": "hi"}}]}]
+        }
+        with patch("msuite.api.v1.bulk_relay._relay_authorised", return_value=True), \
+             patch.object(provider_webhook.frappe, "request", req):
+            res = provider_webhook.meta_webhook()
+            self.assertEqual(res, {"status": "ok"})
+
+    def test_meta_webhook_dispatches_waba(self):
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {"X-MSuite-Relay-Token": "test-relay-token"}
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [{"id": "WABA_123", "changes": [{"value": {"messages": [{"text": {"body": "hi"}}]}}]}]
+        }
+        req.get_json.return_value = payload
+        with patch("msuite.api.v1.bulk_relay._relay_authorised", return_value=True), \
+             patch.object(provider_webhook.frappe, "request", req), \
+             patch.object(provider_webhook, "_forward_to_client") as mock_forward:
+            res = provider_webhook.meta_webhook()
+            self.assertEqual(res, {"status": "ok"})
+            mock_forward.assert_called_once_with("WABA_123", payload)

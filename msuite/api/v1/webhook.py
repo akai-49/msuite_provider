@@ -153,6 +153,50 @@ def receive_meta_social(**kwargs):
     return {"status": "ok"}
 
 
+@frappe.whitelist(allow_guest=True)
+def meta_webhook(**kwargs):
+    """
+    Fallback endpoint for Meta webhooks forwarded from AWS execution plane.
+    Accepts forwarded events for WhatsApp, Facebook, Instagram, or Product Catalog
+    when DynamoDB/Redis tenant routing misses or falls back.
+    Authenticated via X-MSuite-Relay-Token.
+    """
+    if frappe.request.method == "GET":
+        return {"status": "ok"}
+
+    headers = {k.lower(): v for k, v in dict(frappe.request.headers or {}).items()}
+    from msuite.api.v1.bulk_relay import _relay_authorised
+
+    if not _relay_authorised(headers):
+        frappe.throw(_("Invalid relay token"), frappe.AuthenticationError)
+
+    payload = frappe.request.get_json(silent=True) or {}
+    object_type = payload.get("object", "")
+
+    if object_type == "whatsapp_business_account":
+        waba_id = ""
+        try:
+            waba_id = payload["entry"][0]["id"]
+        except (KeyError, IndexError):
+            pass
+        if waba_id:
+            _forward_to_client(waba_id, payload)
+    elif object_type == "product_catalog":
+        for entry in payload.get("entry") or []:
+            catalog_id = entry.get("id")
+            if catalog_id:
+                forward_payload = {"object": object_type, "entry": [entry]}
+                _forward_catalog_event(catalog_id, forward_payload)
+    else:
+        for entry in payload.get("entry") or []:
+            page_id = entry.get("id")
+            if not page_id:
+                continue
+            _dispatch_entry(page_id, entry, object_type or "page")
+
+    return {"status": "ok"}
+
+
 def _dispatch_entry(page_id: str, entry: dict, object_type: str) -> None:
     """Route one webhook entry to the owning client.
 
