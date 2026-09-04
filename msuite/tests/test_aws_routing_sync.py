@@ -85,6 +85,24 @@ class TestAWSRoutingSync(unittest.TestCase):
 		self.assertEqual(item["PK"], "ROUTING#WABA#987654321")
 		self.assertEqual(item["status"], "Suspended")
 
+	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_xyz")
+	def test_sync_waba_route_client_suspended_precedence(self, mock_secret):
+		client_doc = MagicMock()
+		client_doc.name = "CLI-002-DOC"
+		client_doc.client_code = "CLI-002"
+		client_doc.client_url = "https://tenant2.msuite.app"
+		client_doc.api_key = "key_def"
+		client_doc.status = "Suspended"
+
+		# Connected account passes status="Active", but client is Suspended
+		result = aws_routing_sync.sync_waba_route("987654321", client_doc, status="Active")
+		self.assertTrue(result)
+
+		call_args = self.mock_table.put_item.call_args[1]
+		item = call_args["Item"]
+		self.assertEqual(item["PK"], "ROUTING#WABA#987654321")
+		self.assertEqual(item["status"], "Suspended")
+
 	def test_delete_waba_route(self):
 		result = aws_routing_sync.delete_waba_route("104857291")
 		self.assertTrue(result)
@@ -266,6 +284,24 @@ class TestAWSRoutingSync(unittest.TestCase):
 		self.assertEqual(item["PK"], "ROUTING#PAGE#PAGE-102")
 		self.assertEqual(item["status"], "Suspended")
 
+	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_fb")
+	def test_sync_page_route_client_suspended_precedence(self, mock_secret):
+		client_doc = MagicMock()
+		client_doc.name = "CLI-FB-DOC"
+		client_doc.client_code = "CLI-FB"
+		client_doc.client_url = "https://fb.msuite.app"
+		client_doc.api_key = "fb_api_key"
+		client_doc.status = "Suspended"
+
+		# Connected account passes status="Active", but client is Suspended
+		result = aws_routing_sync.sync_page_route("PAGE-102", client_doc, status="Active")
+		self.assertTrue(result)
+
+		call_args = self.mock_table.put_item.call_args[1]
+		item = call_args["Item"]
+		self.assertEqual(item["PK"], "ROUTING#PAGE#PAGE-102")
+		self.assertEqual(item["status"], "Suspended")
+
 	@patch("msuite.services.aws_routing_sync.get_routing_redis_client")
 	def test_delete_page_route(self, mock_get_redis):
 		mock_redis = MagicMock()
@@ -328,6 +364,24 @@ class TestAWSRoutingSync(unittest.TestCase):
 		client_doc.status = "Suspended"
 
 		result = aws_routing_sync.sync_instagram_route("IG-203", client_doc)
+		self.assertTrue(result)
+
+		call_args = self.mock_table.put_item.call_args[1]
+		item = call_args["Item"]
+		self.assertEqual(item["PK"], "ROUTING#INSTAGRAM#IG-203")
+		self.assertEqual(item["status"], "Suspended")
+
+	@patch("msuite.services.aws_routing_sync.get_decrypted_password", return_value="secret_ig")
+	def test_sync_instagram_route_client_suspended_precedence(self, mock_secret):
+		client_doc = MagicMock()
+		client_doc.name = "CLI-IG-DOC"
+		client_doc.client_code = "CLI-IG"
+		client_doc.client_url = "https://ig.msuite.app"
+		client_doc.api_key = "ig_api_key"
+		client_doc.status = "Suspended"
+
+		# Connected account passes status="Active", but client is Suspended
+		result = aws_routing_sync.sync_instagram_route("IG-203", client_doc, status="Active")
 		self.assertTrue(result)
 
 		call_args = self.mock_table.put_item.call_args[1]

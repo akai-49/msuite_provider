@@ -160,7 +160,7 @@ def sync_waba_route(waba_id: str, client_doc_or_name, status: str | None = None)
 			client_doc = client_doc_or_name
 
 		api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret") or ""
-		effective_status = status or ("Active" if client_doc.status == "Active" else "Suspended")
+		effective_status = "Suspended" if client_doc.status != "Active" else (status or "Active")
 
 		item = {
 			"PK": f"ROUTING#WABA#{waba_id}",
@@ -241,7 +241,7 @@ def sync_page_route(page_id: str, client_doc_or_name, status: str | None = None)
 			client_doc = client_doc_or_name
 
 		api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret") or ""
-		effective_status = status or ("Active" if client_doc.status == "Active" else "Suspended")
+		effective_status = "Suspended" if client_doc.status != "Active" else (status or "Active")
 
 		item = {
 			"PK": f"ROUTING#PAGE#{page_id}",
@@ -322,7 +322,7 @@ def sync_instagram_route(ig_user_id: str, client_doc_or_name, status: str | None
 			client_doc = client_doc_or_name
 
 		api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret") or ""
-		effective_status = status or ("Active" if client_doc.status == "Active" else "Suspended")
+		effective_status = "Suspended" if client_doc.status != "Active" else (status or "Active")
 
 		item = {
 			"PK": f"ROUTING#INSTAGRAM#{ig_user_id}",
@@ -403,7 +403,7 @@ def sync_client_route(client_doc_or_name, status: str | None = None) -> bool:
 			return False
 
 		api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret") or ""
-		effective_status = status or ("Active" if client_doc.status == "Active" else "Suspended")
+		effective_status = "Suspended" if client_doc.status != "Active" else (status or "Active")
 
 		item = {
 			"PK": f"ROUTING#CLIENT#{client_doc.client_code}",
