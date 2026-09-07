@@ -90,6 +90,3 @@ has_permission = {
 doctype_js = {
     "Customer": "public/js/customer.js"
 }
-
-before_request = ["msuite.hooks_handlers.proxy.before_request"]
-

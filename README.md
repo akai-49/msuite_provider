@@ -111,7 +111,7 @@ flowchart TB
 
 ```text
 msuite/
-├── hooks.py                 # doc_events, scheduler, before_request proxy
+├── hooks.py                 # doc_events, scheduler_events, fixtures
 ├── constants.py             # tiers, statuses, TTLs, Graph version, error codes
 ├── exceptions.py            # typed MSuiteError hierarchy
 ├── install.py               # after_install: roles, custom fields, seeds
@@ -145,7 +145,7 @@ msuite/
 ├── hooks_handlers/
 │   ├── subscription_hooks.py    # after_insert / on_update
 │   ├── invoice_hooks.py         # on_submit → coupon usage
-│   └── proxy.py                 # before_request reverse proxy (see §13)
+│   └── client_hooks.py          # on_update / on_trash
 │
 ├── seeds/                   # per-product catalog definitions (6 files)
 ├── scheduled_tasks/daily.py # 4 daily jobs
@@ -740,35 +740,18 @@ proxies to Gmail's REST API.
 
 ---
 
-## 13. The reverse proxy
+## 13. The reverse proxy (removed)
 
-`hooks_handlers/proxy.py` registers a `before_request` hook that transparently
-forwards certain inbound requests from the provider to the client site. It
-exists so external services configured with only the provider URL (notably the
-AI Calling backend, which uses `python-httpx`) can reach client endpoints.
+The provider used to register a global `before_request` hook
+(`hooks_handlers/proxy.py`) that forwarded any request whose path started
+with a known prefix — or whose `User-Agent` merely contained `httpx` — to
+*the first Active* `MSuite Client`, with that client's provider key and
+secret injected. It was unauthenticated and tenant-blind: an open relay.
+It has been deleted.
 
-```mermaid
-flowchart TD
-    REQ[Inbound request] --> M{"path starts with<br/>ai_calling. / lead_management. /<br/>msuite_workspace.<br/>OR User-Agent contains httpx"}
-    M -->|no| NORMAL([Normal Frappe routing])
-    M -->|yes| LOOKUP["First MSuite Client with status=Active"]
-    LOOKUP --> BUILD["target = client_url + original path + query<br/>inject X-MSuite-Provider-Key/Secret<br/>rewrite Host header"]
-    BUILD --> FWD[Forward GET/POST/other, 30s timeout]
-    FWD --> STRIP[Strip hop-by-hop headers]
-    STRIP --> RAISE["raise ProxyResponseException<br/>(HTTPException carrying the client response)"]
-```
-
-Returning the response by *raising* a `werkzeug.HTTPException` subclass is the
-mechanism that lets a `before_request` hook short-circuit Frappe's normal
-dispatch.
-
-> **Constraint worth knowing.** The client is selected as *the first*
-> `MSuite Client` with `status = "Active"` — there is no per-request tenant
-> resolution on this path, and it falls back to `http://localhost:8001` when no
-> active client exists. This is correct for a single-tenant provider (the
-> current deployment has exactly one client) but would misroute if a second
-> active client were added. Login requests are explicitly excluded from the
-> httpx branch.
+External services that need to reach a client site must call that site
+directly, or go through an authenticated whitelisted endpoint under
+`api/v1/`.
 
 ---
 
