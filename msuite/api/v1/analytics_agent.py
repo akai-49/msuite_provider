@@ -8,6 +8,7 @@ Acts as the single gateway between:
 """
 from __future__ import annotations
 
+import hmac
 import json
 import time
 import requests
@@ -27,6 +28,31 @@ from msuite.utils.validators import (
 from msuite.api.v1.ai_router import route_user_query
 
 logger = frappe.logger(MSUITE_LOGGER_NAME)
+
+
+def _require_mcp_backend_key():
+    """
+    Authenticate a trusted backend caller (the msuite-mcp-server) on
+    endpoints that resolve or forward using a tenant's real MSuite Client
+    credentials. The caller must send `mcp_backend_shared_key` (from this
+    site's site_config) as the `X-MCP-Backend-Key` header. Fails closed:
+    if the key isn't configured here, every gated endpoint is rejected —
+    these endpoints hand out or use plaintext tenant api_secrets and must
+    never be reachable unauthenticated.
+    """
+    expected = frappe.conf.get("mcp_backend_shared_key")
+    if not expected:
+        logger.error(
+            "[MCP Backend] Gated endpoint called but mcp_backend_shared_key is not "
+            "configured — rejecting. Set it in site_config and on the MCP server."
+        )
+        frappe.throw(
+            "MCP backend authentication is not configured on this provider.",
+            frappe.AuthenticationError,
+        )
+    sent = (frappe.request.headers.get("X-MCP-Backend-Key") or "").strip()
+    if not (sent and hmac.compare_digest(sent, str(expected))):
+        frappe.throw("Invalid or missing X-MCP-Backend-Key.", frappe.AuthenticationError)
 
 
 def _get_microservice_url() -> str:
@@ -163,9 +189,13 @@ def proxy_tool_call(
     params: str | dict | None = None,
 ) -> dict:
     """
-    Proxy an analytics tool execution from the AI microservice to the target client.
+    Proxy an analytics tool execution from a trusted backend to the target client.
     Uses stored credentials in MSuite Client to ensure secure, tenant-isolated access.
+    Gated by `_require_mcp_backend_key()` — this endpoint hands a caller's request
+    through with the target tenant's real provider-auth credentials attached, so it
+    must never be reachable without proving the caller is a trusted backend first.
     """
+    _require_mcp_backend_key()
     doc_name = client_service._resolve_client_doc_name(client_code) if hasattr(client_service, "_resolve_client_doc_name") else None
     if not doc_name:
         doc_name = frappe.db.get_value("MSuite Client", {"client_code": client_code}, "name") or client_code
@@ -198,6 +228,41 @@ def proxy_tool_call(
     except Exception as exc:
         logger.error(f"[Analytics Agent] Tool proxy failed for {client_code} on {method}: {exc}")
         return error_response("TOOL_PROXY_FAILED", str(exc))
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def get_mcp_client_credentials(client_code: str) -> dict:
+    """
+    Return a tenant's raw Frappe REST credentials to the trusted msuite-mcp-server
+    so it can call that tenant's `agent_facade` directly, the same way it already
+    calls its one single-tenant `.env`-configured site today — just resolved
+    per-`client_code` instead of hardcoded. Gated by `_require_mcp_backend_key()`:
+    this hands out a decrypted `api_secret`, so it must never be reachable
+    unauthenticated.
+    """
+    _require_mcp_backend_key()
+
+    doc_name = frappe.db.get_value("MSuite Client", {"client_code": client_code}, "name") or (
+        client_code if frappe.db.exists("MSuite Client", client_code) else None
+    )
+    if not doc_name:
+        return error_response("CLIENT_NOT_FOUND", f"Client '{client_code}' not found on provider.")
+
+    client_doc = frappe.get_doc("MSuite Client", doc_name)
+    if client_doc.status != "Active":
+        return error_response("CLIENT_NOT_ACTIVE", f"Client '{client_code}' is {client_doc.status}.")
+
+    from frappe.utils.password import get_decrypted_password
+
+    api_secret = get_decrypted_password("MSuite Client", client_doc.name, "api_secret", raise_exception=False)
+    if not client_doc.api_key or not api_secret:
+        return error_response("CREDENTIALS_MISSING", f"Client '{client_code}' has no stored API credentials.")
+
+    return success_response({
+        "client_url": client_doc.client_url,
+        "api_key": client_doc.api_key,
+        "api_secret": api_secret,
+    })
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
